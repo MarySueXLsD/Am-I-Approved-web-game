@@ -12,6 +12,7 @@
 	<source path="source" />
 
 	<haxelib name="flixel" />
+	<haxedef name="FLX_NO_DEBUG" />
 
 	<assets path="assets" if="desktop || mobile" />
 	<assets path="static" />
