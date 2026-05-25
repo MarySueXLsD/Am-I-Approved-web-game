@@ -27,6 +27,9 @@ class DeskDocument extends FlxSprite
 	var snapTween:FlxTween;
 	var activeZone:Zone = ClientTable;
 
+	var useAlphaHitTest = false;
+	var alphaThreshold = 20;
+
 	var clientTableAngle = -14.0;
 	var employerTableAngle = -6.0;
 	var windowAngle = -10.0;
@@ -76,7 +79,7 @@ class DeskDocument extends FlxSprite
 			return;
 		}
 
-		if (FlxG.mouse.justPressed && overlapsPoint(mouse) && isFrontmostAtPoint(mouse))
+		if (FlxG.mouse.justPressed && hitsPoint(mouse) && isFrontmostAtPoint(mouse))
 		{
 			bringToFront();
 			startDrag(mouse.x, mouse.y);
@@ -99,11 +102,20 @@ class DeskDocument extends FlxSprite
 			if (member == null)
 				continue;
 			var doc = Std.downcast(member, DeskDocument);
-			if (doc == null || !doc.overlapsPoint(point))
+			if (doc == null || !doc.hitsPoint(point))
 				continue;
 			frontmost = doc;
 		}
 		return frontmost == this;
+	}
+
+	public function hitsPoint(point:FlxPoint):Bool
+	{
+		if (!overlapsPoint(point))
+			return false;
+		if (!useAlphaHitTest)
+			return true;
+		return pixelsOverlapPoint(point, alphaThreshold);
 	}
 
 	function startDrag(mouseX:Float, mouseY:Float):Void
@@ -130,6 +142,16 @@ class DeskDocument extends FlxSprite
 		var mouse = FlxG.mouse.getViewPosition();
 		var dropZone = getDropZoneOnRelease();
 		updateZoneFromCenter(dropZone);
+
+		// On employer table: keep drop position (edge overlap stays clipped, no snap-in).
+		if (isOpen || overlapsEmployerTable())
+		{
+			activeZone = EmployerTable;
+			if (!isOpen)
+				setOpen();
+			updateEmployerTableClip();
+			return;
+		}
 
 		if (cursorInEmployerTable(mouse.x, mouse.y))
 		{
@@ -232,6 +254,15 @@ class DeskDocument extends FlxSprite
 		var ww = zones.employerW;
 		var wh = zones.windowH;
 		return x < wx + ww && x + width > wx && y < wy + wh && y + height > wy;
+	}
+
+	function overlapsEmployerTable():Bool
+	{
+		var ex = zones.employerX;
+		var ey = zones.employerTableY;
+		var er = ex + zones.employerW;
+		var eb = ey + zones.employerTableH;
+		return x < er && x + width > ex && y < eb && y + height > ey;
 	}
 
 	function applyDragBounds():Void
