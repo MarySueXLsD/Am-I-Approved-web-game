@@ -140,24 +140,28 @@ class DeskDocument extends FlxSprite
 		storeAngleForZone(activeZone);
 
 		var mouse = FlxG.mouse.getViewPosition();
-		var dropZone = getDropZoneOnRelease();
-		updateZoneFromCenter(dropZone);
+		var cursorZone = getZoneAt(mouse.x, mouse.y);
 
-		// On employer table: keep drop position (edge overlap stays clipped, no snap-in).
-		if (isOpen || overlapsEmployerTable())
+		// Cursor is on employer table: open on employer table.
+		if (cursorZone == EmployerTable)
 		{
-			activeZone = EmployerTable;
-			if (!isOpen)
-				setOpen();
-			updateEmployerTableClip();
-			return;
-		}
-
-		if (cursorInEmployerTable(mouse.x, mouse.y))
-		{
+			if (isOpen || overlapsEmployerTable())
+			{
+				activeZone = EmployerTable;
+				if (!isOpen)
+					setOpen();
+				updateEmployerTableClip();
+				return;
+			}
 			snapToClosestEmployerTableOpen();
 			return;
 		}
+
+		// Cursor is NOT on employer table: always treat as closed, use cursor zone.
+		var dropZone = cursorZone != None ? cursorZone : getDocumentZone();
+		if (dropZone == None)
+			dropZone = activeZone;
+		updateZoneFromCenter(dropZone);
 
 		setClosed();
 
@@ -165,7 +169,11 @@ class DeskDocument extends FlxSprite
 		{
 			case ClientTable:
 				clampToClientTable();
-			case Client | Computer:
+				nudgeFromClientTableEdges();
+			case Computer:
+				clampToComputer();
+				nudgeFromComputerEdges();
+			case Client:
 				snapToDesk(x, y);
 			case Window:
 				snapToClientTableTopRight();
@@ -268,17 +276,7 @@ class DeskDocument extends FlxSprite
 	function applyDragBounds():Void
 	{
 		if (dragging)
-		{
-			var mouse = FlxG.mouse.getViewPosition();
-			// Cursor on employer table: preview + clip only, no hard clamp (can drag across border).
-			if (cursorInEmployerTable(mouse.x, mouse.y))
-				return;
-
-			var zone = getZoneAtCursor();
-			if (zone != None)
-				clampToZone(zone);
 			return;
-		}
 
 		switch (getDocumentZone())
 		{
@@ -472,10 +470,40 @@ class DeskDocument extends FlxSprite
 		angle = clientTableAngle;
 	}
 
+	static inline var CLIENT_TABLE_PAD_LEFT:Float = 5;
+	static inline var CLIENT_TABLE_PAD_RIGHT:Float = 5;
+	static inline var CLIENT_TABLE_PAD_TOP:Float = 25;
+	static inline var CLIENT_TABLE_PAD_BOTTOM:Float = 2;
+
 	function clampToClientTable():Void
 	{
 		x = FlxMath.bound(x, 0, zones.leftW - width);
 		y = FlxMath.bound(y, zones.clientTableY, zones.clientTableY + zones.clientTableH - height);
+	}
+
+	function nudgeFromClientTableEdges():Void
+	{
+		var minX = CLIENT_TABLE_PAD_LEFT;
+		var maxX = zones.leftW - width - CLIENT_TABLE_PAD_RIGHT;
+		var minY = zones.clientTableY + CLIENT_TABLE_PAD_TOP;
+		var maxY = zones.clientTableY + zones.clientTableH - height - CLIENT_TABLE_PAD_BOTTOM;
+
+		var needsNudge = x < minX || x > maxX || y < minY || y > maxY;
+		if (!needsNudge)
+			return;
+
+		var nx = FlxMath.bound(x, minX, maxX);
+		var ny = FlxMath.bound(y, minY, maxY);
+
+		snapping = true;
+		snapTween = FlxTween.tween(this, {x: nx, y: ny}, SNAP_DURATION, {
+			ease: FlxEase.quadOut,
+			onComplete: function(_)
+			{
+				snapping = false;
+				snapTween = null;
+			}
+		});
 	}
 
 	function clampToClient():Void
@@ -484,10 +512,35 @@ class DeskDocument extends FlxSprite
 		y = FlxMath.bound(y, 0, zones.clientH - height);
 	}
 
+	static inline var COMPUTER_PAD_LEFT:Float = 10;
+	static inline var COMPUTER_PAD_RIGHT:Float = 10;
+
 	function clampToComputer():Void
 	{
 		x = FlxMath.bound(x, 0, zones.leftW - width);
 		y = FlxMath.bound(y, zones.computerY, zones.computerY + zones.computerH - height);
+	}
+
+	function nudgeFromComputerEdges():Void
+	{
+		var minX = COMPUTER_PAD_LEFT;
+		var maxX = zones.leftW - width - COMPUTER_PAD_RIGHT;
+
+		var needsNudge = x < minX || x > maxX;
+		if (!needsNudge)
+			return;
+
+		var nx = FlxMath.bound(x, minX, maxX);
+
+		snapping = true;
+		snapTween = FlxTween.tween(this, {x: nx}, SNAP_DURATION, {
+			ease: FlxEase.quadOut,
+			onComplete: function(_)
+			{
+				snapping = false;
+				snapTween = null;
+			}
+		});
 	}
 
 	function clampToWindow():Void
@@ -506,8 +559,9 @@ class DeskDocument extends FlxSprite
 	{
 		activeZone = ClientTable;
 		var margin = Std.int(Math.max(6, zones.leftW * 0.04));
-		var targetX = zones.leftW - width - margin;
-		var targetY = zones.clientTableY + margin;
+		var targetX = zones.leftW - width - Math.max(margin, CLIENT_TABLE_PAD_RIGHT);
+		var targetY = zones.clientTableY + Math.max(margin, CLIENT_TABLE_PAD_TOP);
+
 		snapping = true;
 		snapTween = FlxTween.tween(this, {x: targetX, y: targetY, angle: clientTableAngle}, SNAP_DURATION, {
 			ease: FlxEase.quadOut,

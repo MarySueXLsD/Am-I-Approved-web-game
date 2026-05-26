@@ -4,6 +4,7 @@ import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.FlxState;
 import flixel.group.FlxGroup;
+import flixel.tweens.FlxEase;
 import flixel.util.FlxColor;
 import openfl.Lib;
 import openfl.events.KeyboardEvent;
@@ -19,10 +20,17 @@ class PlayState extends FlxState
 	var magnifyingGlass:MagnifyingGlass;
 	var monitor:MonitorOverlay;
 
+	var clientImg:FlxSprite;
+	var clientFinalX:Float;
+	var clientFinalY:Float;
+	var clientAnimPhase:Int = 0;
+	var clientAnimTimer:Float = 0;
+	var clientBobOffset:Float = 0;
+
 	static inline var LEFT_COL_RATIO:Float = 0.3;
 	static inline var CLIENT_H_RATIO:Float = 0.4;
 	static inline var CLIENT_TABLE_H_RATIO:Float = 0.25;
-	static inline var WINDOW_H_RATIO:Float = 0.15;
+	static inline var WINDOW_H_RATIO:Float = 0.20;
 
 	override function create():Void
 	{
@@ -65,18 +73,23 @@ class PlayState extends FlxState
 		add(client);
 
 		var clientWall = new FlxSprite(0, 0);
-		clientWall.loadGraphic("static/wall.webp");
+		clientWall.loadGraphic("static/wall.png");
 		clientWall.setGraphicSize(leftW, clientH);
 		clientWall.updateHitbox();
 		add(clientWall);
 
-		var clientImg = new FlxSprite(0, 0);
+		clientImg = new FlxSprite(0, 0);
 		clientImg.loadGraphic("static/client.png");
-		var clientScale = leftW / clientImg.frameWidth;
+		var clientScale = (leftW * 0.75) / clientImg.frameWidth;
 		clientImg.scale.set(clientScale, clientScale);
 		clientImg.updateHitbox();
-		clientImg.x = (leftW - clientImg.width) / 2;
-		clientImg.y = clientH - clientImg.height;
+		clientFinalX = (leftW - clientImg.width) / 2;
+		clientFinalY = clientH - clientImg.height + CLIENT_BOB_AMPLITUDE;
+		clientImg.x = -clientImg.width;
+		clientImg.y = clientFinalY;
+		clientImg.color = FlxColor.BLACK;
+		clientAnimPhase = 1;
+		clientAnimTimer = 0;
 		add(clientImg);
 
 		var clientTable = new LayoutPanel(0, clientTableY, leftW, clientTableH, "Client's table", FlxColor.fromRGB(52, 68, 84));
@@ -101,7 +114,7 @@ class PlayState extends FlxState
 			computerImgH = 1;
 
 		var computerTable = new FlxSprite(0, computerY);
-		computerTable.loadGraphic("static/computer_table.jpg");
+		computerTable.loadGraphic("static/computer_table.png");
 		computerTable.setGraphicSize(leftW, computerImgH);
 		computerTable.updateHitbox();
 		add(computerTable);
@@ -119,7 +132,7 @@ class PlayState extends FlxState
 		add(window);
 
 		var windowImg = new FlxSprite(employerX, 0);
-		windowImg.loadGraphic("static/window.webp");
+		windowImg.loadGraphic("static/window.png");
 		windowImg.setGraphicSize(employerW, windowH);
 		windowImg.updateHitbox();
 		add(windowImg);
@@ -130,10 +143,9 @@ class PlayState extends FlxState
 		var employerTableTiles = createTiledSprite("static/employers_table.png", employerX, employerTableY, employerW, employerTableH);
 		add(employerTableTiles);
 
-		addSeparator(0, clientH, leftW, sep);
-		addSeparator(0, computerY, leftW, sep);
-		addSeparator(employerX - sep, 0, sep, screenH);
-		addSeparator(employerX, windowH, employerW, sep);
+		var dotGrid = createDotGrid(employerX, employerTableY, employerW, employerTableH);
+		add(dotGrid);
+
 
 		zones = {
 			leftW: leftW,
@@ -160,12 +172,28 @@ class PlayState extends FlxState
 		add(documents);
 
 		var lc = magnifyingGlass.lensCam;
+		var cc = magnifyingGlass.coverCam;
 		if (lc != null)
 		{
 			employerTable.cameras = [FlxG.camera, lc];
 			employerTableTiles.cameras = [FlxG.camera, lc];
+			dotGrid.cameras = [FlxG.camera, lc];
 			passport.cameras = [FlxG.camera, lc];
 			idDocument.cameras = [FlxG.camera, lc];
+		}
+		if (cc != null)
+		{
+			client.cameras = [FlxG.camera, cc];
+			clientWall.cameras = [FlxG.camera, cc];
+			clientImg.cameras = [FlxG.camera, cc];
+			clientTable.cameras = [FlxG.camera, cc];
+			clientTableImg.cameras = [FlxG.camera, cc];
+			computer.cameras = [FlxG.camera, cc];
+			computerTable.cameras = [FlxG.camera, cc];
+			computerImg.cameras = [FlxG.camera, cc];
+			computerHud.cameras = [FlxG.camera, cc];
+			window.cameras = [FlxG.camera, cc];
+			windowImg.cameras = [FlxG.camera, cc];
 		}
 
 		CitizenRegistry.load();
@@ -179,6 +207,7 @@ class PlayState extends FlxState
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
+		updateClientEntrance(elapsed);
 		magnifyingGlass.setHidden(monitor.isShowing);
 
 		var p = FlxG.mouse.getViewPosition();
@@ -213,6 +242,50 @@ class PlayState extends FlxState
 			return;
 
 		monitor.show();
+	}
+
+	static inline var CLIENT_WALK_DURATION:Float = 1.1;
+	static inline var CLIENT_REVEAL_DURATION:Float = 0.5;
+	static inline var CLIENT_BOB_SPEED:Float = 6.0;
+	static inline var CLIENT_BOB_AMPLITUDE:Float = 4.0;
+
+	function updateClientEntrance(elapsed:Float):Void
+	{
+		if (clientAnimPhase == 0)
+			return;
+
+		clientAnimTimer += elapsed;
+
+		if (clientAnimPhase == 1)
+		{
+			var t = Math.min(clientAnimTimer / CLIENT_WALK_DURATION, 1.0);
+			var eased = FlxEase.quadOut(t);
+			clientImg.x = -clientImg.width + (clientFinalX + clientImg.width) * eased;
+
+			clientBobOffset += elapsed * CLIENT_BOB_SPEED;
+			clientImg.y = clientFinalY + Math.sin(clientBobOffset) * CLIENT_BOB_AMPLITUDE;
+
+			if (t >= 1.0)
+			{
+				clientImg.x = clientFinalX;
+				clientImg.y = clientFinalY;
+				clientAnimPhase = 2;
+				clientAnimTimer = 0;
+			}
+		}
+		else if (clientAnimPhase == 2)
+		{
+			var t = Math.min(clientAnimTimer / CLIENT_REVEAL_DURATION, 1.0);
+			var eased = FlxEase.sineOut(t);
+			var c = Std.int(eased * 255);
+			clientImg.color = FlxColor.fromRGB(c, c, c);
+
+			if (t >= 1.0)
+			{
+				clientImg.color = FlxColor.WHITE;
+				clientAnimPhase = 0;
+			}
+		}
 	}
 
 	function isComputerZoneClick():Bool
@@ -261,6 +334,44 @@ class PlayState extends FlxState
 		}
 		bg.dirty = true;
 		return bg;
+	}
+
+	function createDotGrid(x:Int, y:Int, w:Int, h:Int):FlxSprite
+	{
+		var dotSpacing = Std.int(Math.max(20, FlxG.height / 30));
+		var dotRadius = Std.int(Math.max(1, dotSpacing / 14));
+		var dotColor:Int = 0x40FFFFFF;
+
+		var spr = new FlxSprite(x, y);
+		spr.makeGraphic(w, h, FlxColor.TRANSPARENT, true);
+		var bmd = spr.pixels;
+
+		var py = dotSpacing;
+		while (py < h)
+		{
+			var px = dotSpacing;
+			while (px < w)
+			{
+				for (dy in -dotRadius...dotRadius + 1)
+				{
+					for (dx in -dotRadius...dotRadius + 1)
+					{
+						if (dx * dx + dy * dy <= dotRadius * dotRadius)
+						{
+							var drawX = px + dx;
+							var drawY = py + dy;
+							if (drawX >= 0 && drawX < w && drawY >= 0 && drawY < h)
+								bmd.setPixel32(drawX, drawY, dotColor);
+						}
+					}
+				}
+				px += dotSpacing;
+			}
+			py += dotSpacing;
+		}
+
+		spr.dirty = true;
+		return spr;
 	}
 
 	function addSeparator(x:Int, y:Int, w:Int, h:Int):Void
