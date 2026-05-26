@@ -20,7 +20,7 @@ class MagnifyingGlass extends DeskDocument
 
 	var glassR:Float;
 	public var lensCam:FlxCamera;
-	var coverCam:FlxCamera;
+	public var coverCam:FlxCamera;
 	var lensMask:Shape;
 	var maskAttached = false;
 
@@ -152,7 +152,7 @@ class MagnifyingGlass extends DeskDocument
 				continue;
 
 			var shouldZoom = i < myIndex && doc.isOpen;
-			var shouldCover = i > myIndex;
+			var shouldCover = !shouldZoom;
 
 			var cams = doc.cameras;
 			var hasLens = cams.indexOf(lensCam) >= 0;
@@ -199,10 +199,13 @@ class MagnifyingGlass extends DeskDocument
 		var sr = glassR * s;
 
 		var d = Std.int(Math.max(10, sr * 2));
+		var camL = Std.int(gcx - d * 0.5);
+		var camT = Std.int(gcy - d * 0.5);
+
+		lensCam.x = camL;
+		lensCam.y = camT;
 		lensCam.width = d;
 		lensCam.height = d;
-		lensCam.x = Std.int(gcx - d * 0.5);
-		lensCam.y = Std.int(gcy - d * 0.5);
 		lensCam.scroll.x = gcx - d / (2.0 * ZOOM);
 		lensCam.scroll.y = gcy - d / (2.0 * ZOOM);
 
