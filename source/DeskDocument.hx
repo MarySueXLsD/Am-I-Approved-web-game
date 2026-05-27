@@ -21,11 +21,14 @@ class DeskDocument extends FlxSprite
 	var closedDisplayWidth:Float;
 	var dragging = false;
 	var snapping = false;
+	var scanLocked = false;
 	var dragGrabNormX = 0.0;
 	var dragGrabNormY = 0.0;
 	var isOpen = false;
 	var snapTween:FlxTween;
 	var activeZone:Zone = ClientTable;
+	public var onDroppedOnPrinter:DeskDocument->Bool;
+	public static var onDrawLayerChanged:DeskDocument->Void;
 
 	var useAlphaHitTest = false;
 	var alphaThreshold = 20;
@@ -64,6 +67,9 @@ class DeskDocument extends FlxSprite
 	{
 		super.update(elapsed);
 
+		if (scanLocked)
+			return;
+
 		if (snapping)
 			return;
 
@@ -79,7 +85,10 @@ class DeskDocument extends FlxSprite
 			return;
 		}
 
-		if (FlxG.mouse.justPressed && hitsPoint(mouse) && isFrontmostAtPoint(mouse))
+		if (!MonitorOverlay.blocksWorldInput()
+			&& FlxG.mouse.justPressed
+			&& hitsPoint(mouse)
+			&& isFrontmostAtPoint(mouse))
 		{
 			bringToFront();
 			startDrag(mouse.x, mouse.y);
@@ -118,6 +127,76 @@ class DeskDocument extends FlxSprite
 		return pixelsOverlapPoint(point, alphaThreshold);
 	}
 
+	public function isOpenOnEmployerTable():Bool
+	{
+		return isOpen && (activeZone == EmployerTable || overlapsEmployerTable());
+	}
+
+	public function getClosedGraphicPath():String
+	{
+		return closedPath;
+	}
+
+	public function isDragging():Bool
+	{
+		return dragging;
+	}
+
+	public function setInteractionLayer(newLayer:FlxGroup):Void
+	{
+		layer = newLayer;
+	}
+
+	public function moveToLayer(target:FlxGroup):Void
+	{
+		if (layer == target)
+			return;
+
+		if (layer.members.indexOf(this) >= 0)
+			layer.remove(this, true);
+		setInteractionLayer(target);
+		target.add(this);
+	}
+
+	public function lockForPrinterScan():Void
+	{
+		scanLocked = true;
+		visible = false;
+		onScanLockChanged(true);
+	}
+
+	public function unlockAfterPrinterScan():Void
+	{
+		scanLocked = false;
+		visible = true;
+		onScanLockChanged(false);
+		activeZone = ClientTable;
+		setClosed();
+		snapToDesk(x, y);
+	}
+
+	public function prepareClientHandoff():Void
+	{
+		if (snapTween != null)
+		{
+			snapTween.cancel();
+			snapTween = null;
+		}
+		FlxTween.cancelTweensOf(this);
+		dragging = false;
+		snapping = false;
+		scanLocked = false;
+		clearEmployerClip();
+		setClosed();
+		activeZone = ClientTable;
+		visible = true;
+		onScanLockChanged(false);
+	}
+
+	function onScanLockChanged(locked:Bool):Void
+	{
+	}
+
 	function startDrag(mouseX:Float, mouseY:Float):Void
 	{
 		if (snapTween != null)
@@ -140,6 +219,20 @@ class DeskDocument extends FlxSprite
 		storeAngleForZone(activeZone);
 
 		var mouse = FlxG.mouse.getViewPosition();
+		if (cursorInPrinter(mouse.x, mouse.y))
+		{
+			setClosed();
+			var accepted = onDroppedOnPrinter != null && onDroppedOnPrinter(this);
+			if (!accepted)
+				snapToDesk(x, y);
+			return;
+		}
+		if (cursorInCalculator(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y))
+		{
+			setClosed();
+			snapToDesk(x, y);
+			return;
+		}
 		var cursorZone = getZoneAt(mouse.x, mouse.y);
 
 		// Cursor is on employer table: open on employer table.
@@ -171,8 +264,7 @@ class DeskDocument extends FlxSprite
 				clampToClientTable();
 				nudgeFromClientTableEdges();
 			case Computer:
-				clampToComputer();
-				nudgeFromComputerEdges();
+				snapToDesk(x, y);
 			case Client:
 				snapToDesk(x, y);
 			case Window:
@@ -210,6 +302,8 @@ class DeskDocument extends FlxSprite
 			activeZone = zone;
 			if (!isOpen)
 				angle = getAngleForZone(zone);
+			else
+				notifyDrawLayerChanged();
 		}
 	}
 
@@ -218,6 +312,10 @@ class DeskDocument extends FlxSprite
 		if (dragging)
 		{
 			var mouse = FlxG.mouse.getViewPosition();
+			if (cursorInPrinter(mouse.x, mouse.y))
+				return false;
+			if (cursorInCalculator(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y))
+				return false;
 			return cursorInEmployerTable(mouse.x, mouse.y);
 		}
 		return activeZone == EmployerTable;
@@ -226,6 +324,37 @@ class DeskDocument extends FlxSprite
 	function cursorInEmployerTable(cx:Float, cy:Float):Bool
 	{
 		return inRect(cx, cy, zones.employerX, zones.employerTableY, zones.employerW, zones.employerTableH);
+	}
+
+	function cursorInPrinter(cx:Float, cy:Float):Bool
+	{
+		return inRect(cx, cy, zones.printerX, zones.printerY, zones.printerW, zones.printerH);
+	}
+
+	function cursorInCalculator(cx:Float, cy:Float):Bool
+	{
+		return inRect(cx, cy, zones.calculatorX, zones.calculatorY, zones.calculatorW, zones.calculatorH);
+	}
+
+	function cursorInShredder(cx:Float, cy:Float):Bool
+	{
+		return inRect(cx, cy, zones.shredderX, zones.shredderY, zones.shredderW, zones.shredderH);
+	}
+
+	function overlapsPrinter():Bool
+	{
+		var px = zones.printerX;
+		var py = zones.printerY;
+		var pr = px + zones.printerW;
+		var pb = py + zones.printerH;
+		return x < pr && x + width > px && y < pb && y + height > py;
+	}
+
+	function centerInPrinter():Bool
+	{
+		var cx = x + width * 0.5;
+		var cy = y + height * 0.5;
+		return inRect(cx, cy, zones.printerX, zones.printerY, zones.printerW, zones.printerH);
 	}
 
 	function getDocumentCenter():FlxPoint
@@ -648,6 +777,7 @@ class DeskDocument extends FlxSprite
 		applyDisplaySize();
 		angle = getAngleForZone(activeZone);
 		placeAfterResize(cx, cy);
+		notifyDrawLayerChanged();
 	}
 
 	function setOpen():Void
@@ -662,6 +792,13 @@ class DeskDocument extends FlxSprite
 		applyDisplaySize();
 		angle = 0;
 		placeAfterResize(cx, cy);
+		notifyDrawLayerChanged();
+	}
+
+	function notifyDrawLayerChanged():Void
+	{
+		if (onDrawLayerChanged != null)
+			onDrawLayerChanged(this);
 	}
 
 	function placeAfterResize(prevCenterX:Float, prevCenterY:Float):Void

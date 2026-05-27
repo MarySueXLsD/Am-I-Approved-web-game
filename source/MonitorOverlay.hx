@@ -38,7 +38,6 @@ class MonitorOverlay extends FlxGroup
 	var slideTween:FlxTween;
 	var targetX:Float;
 	var targetY:Float;
-	var pendingCapture = false;
 	var uiInitialized = false;
 	var blurGraphicKey:String;
 	var crtGraphicKey:String;
@@ -55,6 +54,29 @@ class MonitorOverlay extends FlxGroup
 
 	public var isShowing(default, null) = false;
 	public var isAnimating(default, null) = false;
+	public var pendingCapture(default, null) = false;
+
+	static var instance:MonitorOverlay;
+
+	var captureWaitFrames = 0;
+	static inline var CAPTURE_TIMEOUT_FRAMES = 30;
+
+	public static function blocksWorldInput():Bool
+	{
+		return instance != null && instance.isActive();
+	}
+
+	public static function pausesDialogue():Bool
+	{
+		if (instance == null || !instance.isShowing)
+			return false;
+		return instance.visible || instance.isAnimating;
+	}
+
+	public function isActive():Bool
+	{
+		return isShowing || pendingCapture;
+	}
 
 	public var isBusy(get, never):Bool;
 
@@ -66,6 +88,7 @@ class MonitorOverlay extends FlxGroup
 	public function new()
 	{
 		super();
+		instance = this;
 
 		backdrop = new FlxSprite();
 		backdrop.visible = false;
@@ -123,6 +146,11 @@ class MonitorOverlay extends FlxGroup
 		screenUi.handleRelease();
 	}
 
+	public function setOnPrintRequest(cb:Void->Bool):Void
+	{
+		screenUi.onPrintRequest = cb;
+	}
+
 	public function show():Void
 	{
 		if (isAnimating || pendingCapture)
@@ -134,7 +162,7 @@ class MonitorOverlay extends FlxGroup
 		monitor.visible = false;
 		visible = false;
 		pendingCapture = true;
-		isShowing = true;
+		captureWaitFrames = 0;
 
 		captureOnPostDraw = onPostDrawCapture;
 		FlxG.signals.postDraw.add(captureOnPostDraw);
@@ -161,7 +189,10 @@ class MonitorOverlay extends FlxGroup
 		isAnimating = true;
 
 		if (slideTween != null)
+		{
 			slideTween.cancel();
+			slideTween = null;
+		}
 
 		slideTween = FlxTween.tween(monitor, {x: -monitor.width}, SLIDE_DURATION, {
 			ease: FlxEase.quadIn,
@@ -184,6 +215,15 @@ class MonitorOverlay extends FlxGroup
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
+
+		if (pendingCapture)
+		{
+			captureWaitFrames++;
+			if (captureWaitFrames >= CAPTURE_TIMEOUT_FRAMES)
+				cancelPendingShow();
+			return;
+		}
+
 		if (!screenUi.visible || !monitor.visible)
 			return;
 
@@ -229,6 +269,7 @@ class MonitorOverlay extends FlxGroup
 
 		cancelCaptureListener();
 		captureBackdrop();
+		isShowing = true;
 		visible = true;
 		beginSlideIn();
 	}
@@ -236,11 +277,21 @@ class MonitorOverlay extends FlxGroup
 	function cancelCaptureListener():Void
 	{
 		pendingCapture = false;
+		captureWaitFrames = 0;
 		if (captureOnPostDraw != null)
 		{
 			FlxG.signals.postDraw.remove(captureOnPostDraw);
 			captureOnPostDraw = null;
 		}
+	}
+
+	function cancelPendingShow():Void
+	{
+		cancelCaptureListener();
+		visible = false;
+		screenUi.visible = false;
+		crtOverlay.visible = false;
+		animOverlay.visible = false;
 	}
 
 	public function containsOpaquePoint(p:FlxPoint):Bool
@@ -271,7 +322,10 @@ class MonitorOverlay extends FlxGroup
 		isAnimating = true;
 
 		if (slideTween != null)
+		{
 			slideTween.cancel();
+			slideTween = null;
+		}
 
 		slideTween = FlxTween.tween(monitor, {x: targetX}, SLIDE_DURATION, {
 			ease: FlxEase.quadOut,

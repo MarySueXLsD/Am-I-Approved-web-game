@@ -40,11 +40,11 @@ typedef Citizen = {
 	var eyeColor:String;
 	var passportIssued:String;
 	var passportExpires:String;
-	var voterRegistered:Bool;
+	var voterRegistered:String;
 	var militaryService:String;
 	var emergencyContact:CitizenEmergencyContact;
 	var bankRiskFlags:Array<String>;
 	var criminalRecord:String;
 	var yearsAtAddress:Int;
-	var dependents:Int;
+	var dependents:String;
 }

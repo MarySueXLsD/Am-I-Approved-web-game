@@ -31,6 +31,8 @@ class MonitorClientDetail extends FlxGroup
 	var entryRows:Array<MonitorDetailEntryRow> = [];
 	var entries:Array<CitizenDetailEntry> = [];
 
+	static inline var MAX_DD:Int = 6;
+
 	var citizen:Citizen;
 	var areaX:Float = 0;
 	var areaY:Float = 0;
@@ -53,6 +55,17 @@ class MonitorClientDetail extends FlxGroup
 	var panelDirty = true;
 	var scrollDirty = true;
 	var keyHandler:KeyboardEvent->Void;
+
+	var ddBg:FlxSprite;
+	var ddTxt:Array<FlxText>;
+	var ddOpen:Bool = false;
+	var ddPath:String = "";
+	var ddChoices:Array<String> = [];
+	var ddX:Float = 0;
+	var ddY:Float = 0;
+	var ddW:Float = 0;
+	var ddItemH:Int = 0;
+	var ddCurrentValue:String = "";
 
 	public function new()
 	{
@@ -87,6 +100,21 @@ class MonitorClientDetail extends FlxGroup
 		scrollLayer.add(scrollDownBtn);
 		scrollLayer.add(scrollThumb);
 
+		ddBg = new FlxSprite();
+		ddBg.scrollFactor.set(0, 0);
+		ddBg.visible = false;
+		add(ddBg);
+
+		ddTxt = [];
+		for (i in 0...MAX_DD)
+		{
+			var t = new FlxText(0, 0, 0, "");
+			t.scrollFactor.set(0, 0);
+			t.visible = false;
+			add(t);
+			ddTxt.push(t);
+		}
+
 		confirmDialog = new MonitorConfirmDialog();
 		add(confirmDialog);
 
@@ -101,8 +129,10 @@ class MonitorClientDetail extends FlxGroup
 
 	public function suspendInput():Void
 	{
-		blurField();
-		confirmDialog.close();
+		submitAndBlur();
+		closeDropdown();
+		if (!confirmDialog.isOpen())
+			confirmDialog.close();
 		endDrag();
 	}
 
@@ -166,6 +196,7 @@ class MonitorClientDetail extends FlxGroup
 	{
 		citizen = c;
 		entries = CitizenRegistry.buildDetailEntries(c);
+		closeDropdown();
 		if (resetScroll)
 		{
 			scrollIndex = 0;
@@ -202,12 +233,13 @@ class MonitorClientDetail extends FlxGroup
 	{
 		if (delta == 0 || isModalOpen())
 			return;
+		closeDropdown();
 		var old = scrollIndex;
 		scrollIndex += delta;
 		clampScroll();
 		if (scrollIndex != old)
 		{
-			blurField();
+			submitAndBlur();
 			lastRenderedScroll = -1;
 			refresh();
 		}
@@ -229,6 +261,16 @@ class MonitorClientDetail extends FlxGroup
 	{
 		if (confirmDialog.isOpen())
 			return confirmDialog.handleClick(mx, my);
+
+		if (ddOpen)
+		{
+			if (isInDropdownArea(mx, my))
+			{
+				selectDropdownItem(mx, my);
+				return true;
+			}
+			closeDropdown();
+		}
 
 		if (isScrollable() && isOnScrollColumn(mx, my))
 		{
@@ -255,7 +297,7 @@ class MonitorClientDetail extends FlxGroup
 
 		if (isInPanelArea(mx, my))
 		{
-			blurField();
+			submitAndBlur();
 			return true;
 		}
 
@@ -284,7 +326,7 @@ class MonitorClientDetail extends FlxGroup
 		clampScroll();
 		if (scrollIndex != old)
 		{
-			blurField();
+			submitAndBlur();
 			refresh();
 		}
 		else
@@ -296,6 +338,11 @@ class MonitorClientDetail extends FlxGroup
 		thumbDragging = false;
 	}
 
+	public function showWarning(messageText:String, dismiss:Void->Void):Void
+	{
+		confirmDialog.showWarning(areaX, areaY, areaW, areaH, messageText, dismiss);
+	}
+
 	function tryFocusField(mx:Float, my:Float):Bool
 	{
 		var end = Std.int(Math.min(entries.length, scrollIndex + visibleCount));
@@ -305,6 +352,12 @@ class MonitorClientDetail extends FlxGroup
 			var path = entryRows[slot].tryFocusPath(mx, my);
 			if (path != null)
 			{
+				var fieldRow = entryRows[slot].getFieldRow(path);
+				if (fieldRow != null && fieldRow.isDropdown())
+				{
+					openDropdown(fieldRow);
+					return true;
+				}
 				focusFieldPath(path);
 				return true;
 			}
@@ -316,6 +369,16 @@ class MonitorClientDetail extends FlxGroup
 	{
 		if (path == null || path.length == 0)
 			return;
+
+		if (focusedPath != null && focusedPath != path)
+		{
+			var oldRow = getFocusedFieldRow();
+			if (oldRow != null && oldRow.hasChanges())
+			{
+				submitFieldEdit(oldRow);
+				return;
+			}
+		}
 
 		if (focusedPath != path)
 		{
@@ -332,6 +395,27 @@ class MonitorClientDetail extends FlxGroup
 		focusedPath = null;
 		detachKeyListener();
 		refreshRowPositions();
+	}
+
+	public function hasPendingEdit():Bool
+	{
+		if (focusedPath == null)
+			return false;
+		var row = getFocusedFieldRow();
+		return row != null && row.hasChanges();
+	}
+
+	function submitAndBlur():Void
+	{
+		if (focusedPath == null)
+			return;
+		var row = getFocusedFieldRow();
+		if (row != null && row.hasChanges())
+		{
+			submitFieldEdit(row);
+			return;
+		}
+		blurField();
 	}
 
 	function getFocusedFieldRow():Null<MonitorDetailFieldRow>
@@ -367,7 +451,17 @@ class MonitorClientDetail extends FlxGroup
 
 	function onKeyDown(e:KeyboardEvent):Void
 	{
-		if (!visible || isModalOpen() || focusedPath == null || citizen == null)
+		if (!visible)
+			return;
+
+		if (confirmDialog.isOpen())
+		{
+			if (confirmDialog.handleKey(e.keyCode))
+				e.stopImmediatePropagation();
+			return;
+		}
+
+		if (focusedPath == null || citizen == null)
 			return;
 
 		var row = getFocusedFieldRow();
@@ -396,7 +490,41 @@ class MonitorClientDetail extends FlxGroup
 				row.setDraft(draft.substr(0, draft.length - 1));
 		}
 		else if (e.charCode > 32)
-			row.setDraft(row.getDraft() + Std.string(String.fromCharCode(e.charCode)));
+		{
+			var ch = String.fromCharCode(e.charCode);
+			if (row.digitsOnly)
+			{
+				var code = e.charCode;
+				if (code < 48 || code > 57)
+				{
+					e.stopImmediatePropagation();
+					return;
+				}
+			}
+			else if (row.dateField)
+			{
+				var code = e.charCode;
+				var isDigit = code >= 48 && code <= 57;
+				var isHyphen = code == 45;
+				if (!isDigit && !isHyphen)
+				{
+					e.stopImmediatePropagation();
+					return;
+				}
+				if (row.getDraft().length >= 10)
+				{
+					e.stopImmediatePropagation();
+					return;
+				}
+			}
+			var newDraft = row.getDraft() + Std.string(ch);
+			if (!row.textFits(newDraft))
+			{
+				e.stopImmediatePropagation();
+				return;
+			}
+			row.setDraft(newDraft);
+		}
 		else
 			return;
 
@@ -415,6 +543,79 @@ class MonitorClientDetail extends FlxGroup
 		var label = CitizenRegistry.fieldLabel(entries, row.path);
 		var oldVal = row.getSaved();
 		var newVal = row.getDraft();
+
+		if (row.digitsOnly && newVal.length > 0)
+		{
+			var allDigits = true;
+			for (i in 0...newVal.length)
+			{
+				var c = newVal.charCodeAt(i);
+				if (c < 48 || c > 57)
+				{
+					allDigits = false;
+					break;
+				}
+			}
+			if (!allDigits)
+			{
+				detachKeyListener();
+				confirmDialog.showWarning(areaX, areaY, areaW, areaH,
+					"Sorry! Our complex AI\nalgorithms detected that\nyou provided wrong values in this input.", function()
+				{
+					row.revertDraft();
+					blurField();
+					refreshRowPositions();
+				});
+				return;
+			}
+		}
+
+		if (row.path == "address.postalCode" && newVal.length > 0)
+		{
+			if (newVal.length < 5 || newVal.length > 7)
+			{
+				detachKeyListener();
+				confirmDialog.showWarning(areaX, areaY, areaW, areaH,
+					"Sorry! Our advanced AI\n noticed that\nthis postal code\ndoesn't look real.", function()
+				{
+					row.revertDraft();
+					blurField();
+					refreshRowPositions();
+				});
+				return;
+			}
+		}
+
+		if (row.path == "yearsAtAddress" && newVal.length > 0)
+		{
+			var years = Std.parseInt(newVal);
+			if (years != null && years >= 100)
+			{
+				detachKeyListener();
+				confirmDialog.showWarning(areaX, areaY, areaW, areaH,
+					"Sorry! Our complex AI\nuhh, thing..., noticed that\nthis value can't be\npossible.", function()
+				{
+					row.revertDraft();
+					blurField();
+					refreshRowPositions();
+				});
+				return;
+			}
+		}
+
+		if (row.dateField && !CitizenRegistry.isValidDateFormat(newVal))
+		{
+			detachKeyListener();
+			confirmDialog.showWarning(areaX, areaY, areaW, areaH,
+				"Sorry! It seems like what\nyou entered is not \nreally a date, hmm \nit must be yyyy-mm-dd.", function()
+			{
+				row.revertDraft();
+				blurField();
+				refreshRowPositions();
+			});
+			return;
+		}
+
 		detachKeyListener();
 
 		confirmDialog.show(areaX, areaY, areaW, areaH, label, oldVal, newVal, function()
@@ -733,6 +934,121 @@ class MonitorClientDetail extends FlxGroup
 		sprite.dirty = true;
 	}
 
+	function openDropdown(row:MonitorDetailFieldRow):Void
+	{
+		if (ddOpen)
+			closeDropdown();
+
+		blurField();
+
+		ddOpen = true;
+		ddPath = row.path;
+		ddChoices = row.getChoices();
+		ddCurrentValue = row.getSaved();
+		ddItemH = fontSize + 6;
+
+		ddX = row.box.x;
+		ddY = row.box.y + row.box.height;
+		ddW = row.box.width;
+
+		var totalH = ddChoices.length * ddItemH + 2;
+
+		if (ddY + totalH > areaY + areaH)
+			ddY = row.box.y - totalH;
+
+		var bgW = Std.int(ddW);
+		var bgH = Std.int(totalH);
+		ddBg.makeGraphic(bgW, bgH, 0xFF0A120E, true);
+		drawRectBorder(ddBg, bgW, bgH, MonitorScreenUi.GREEN, 1);
+		ddBg.setPosition(ddX, ddY);
+		ddBg.visible = true;
+
+		for (i in 0...MAX_DD)
+		{
+			if (i < ddChoices.length)
+			{
+				var t = ddTxt[i];
+				var isSelected = ddChoices[i] == ddCurrentValue;
+				t.text = ddChoices[i];
+				t.setFormat(null, fontSize, isSelected ? MonitorScreenUi.GREEN_BRIGHT : MonitorScreenUi.GREEN, "left");
+				t.fieldWidth = Std.int(ddW - 8);
+				t.scale.set(1, 1);
+				t.setPosition(ddX + 4, ddY + 1 + i * ddItemH + 2);
+				t.visible = true;
+			}
+			else
+				ddTxt[i].visible = false;
+		}
+	}
+
+	function closeDropdown():Void
+	{
+		ddOpen = false;
+		ddBg.visible = false;
+		for (t in ddTxt)
+			t.visible = false;
+	}
+
+	function isInDropdownArea(mx:Float, my:Float):Bool
+	{
+		return ddOpen && mx >= ddX && mx < ddX + ddW && my >= ddY && my < ddY + ddBg.height;
+	}
+
+	function selectDropdownItem(mx:Float, my:Float):Void
+	{
+		var relY = my - ddY - 1;
+		var idx = Std.int(relY / ddItemH);
+		if (idx < 0 || idx >= ddChoices.length)
+		{
+			closeDropdown();
+			return;
+		}
+
+		var displayNew = ddChoices[idx];
+		var storeNew = displayNew == "No data" ? "" : displayNew;
+		var displayOld = ddCurrentValue.length == 0 ? "No data" : ddCurrentValue;
+		var path = ddPath;
+
+		closeDropdown();
+
+		if (storeNew == ddCurrentValue)
+			return;
+
+		var label = CitizenRegistry.fieldLabel(entries, path);
+		confirmDialog.show(areaX, areaY, areaW, areaH, label, displayOld, displayNew, function()
+		{
+			CitizenRegistry.setFieldValue(citizen, path, storeNew);
+			setCitizen(citizen, false);
+		}, function()
+		{
+		});
+	}
+
+	function updateDropdownHover():Void
+	{
+		if (!ddOpen)
+			return;
+
+		var p = FlxG.mouse.getViewPosition();
+		var mx = p.x;
+		var my = p.y;
+
+		for (i in 0...ddChoices.length)
+		{
+			if (i >= ddTxt.length || !ddTxt[i].visible)
+				continue;
+			var itemY = ddY + 1 + i * ddItemH + 2;
+			var hovered = mx >= ddX && mx < ddX + ddW && my >= itemY && my < itemY + ddItemH;
+			var isSelected = ddChoices[i] == ddCurrentValue;
+			if (hovered)
+				ddTxt[i].color = MonitorScreenUi.GREEN_BRIGHT;
+			else if (isSelected)
+				ddTxt[i].color = MonitorScreenUi.GREEN_BRIGHT;
+			else
+				ddTxt[i].color = MonitorScreenUi.GREEN;
+		}
+	}
+
 	public function hide():Void
 	{
 		suspendInput();
@@ -752,7 +1068,18 @@ class MonitorClientDetail extends FlxGroup
 	{
 		super.update(elapsed);
 
-		if (!visible || focusedPath == null || citizen == null || isModalOpen())
+		if (!visible || citizen == null || isModalOpen())
+			return;
+
+		if (ddOpen)
+		{
+			updateDropdownHover();
+			if (FlxG.keys.justPressed.ESCAPE)
+				closeDropdown();
+			return;
+		}
+
+		if (focusedPath == null)
 			return;
 
 		if (FlxG.keys.justPressed.SPACE)

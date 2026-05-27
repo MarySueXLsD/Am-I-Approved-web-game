@@ -112,7 +112,7 @@ class CitizenRegistry
 				eyeColor: entry.eyeColor,
 				passportIssued: entry.passportIssued,
 				passportExpires: entry.passportExpires,
-				voterRegistered: entry.voterRegistered,
+				voterRegistered: voterFromJson(entry.voterRegistered),
 				militaryService: entry.militaryService,
 				emergencyContact: {
 					name: emergency != null ? emergency.name : "",
@@ -122,7 +122,7 @@ class CitizenRegistry
 				bankRiskFlags: flags,
 				criminalRecord: entry.criminalRecord,
 				yearsAtAddress: entry.yearsAtAddress,
-				dependents: entry.dependents
+				dependents: Std.string(entry.dependents)
 			});
 		}
 	}
@@ -218,12 +218,67 @@ class CitizenRegistry
 		return '${displayName(c)}  |  ${c.nationalId}';
 	}
 
+	static function sexDisplay(raw:String):String
+	{
+		return switch (raw)
+		{
+			case "M": "Male";
+			case "F": "Female";
+			default: raw;
+		}
+	}
+
+	static function sexStore(display:String):String
+	{
+		return switch (display)
+		{
+			case "Male": "M";
+			case "Female": "F";
+			default: display;
+		}
+	}
+
+	static var DATE_FORMAT = ~/^\d{4}-\d{2}-\d{2}$/;
+
+	public static function isValidDateFormat(value:String):Bool
+	{
+		return value.length == 10 && DATE_FORMAT.match(value);
+	}
+
+	static function voterFromJson(raw:Dynamic):String
+	{
+		if (raw == true)
+			return "YES";
+		if (raw == false)
+			return "NO";
+		var s = Std.string(raw);
+		if (s == "true")
+			return "YES";
+		if (s == "false")
+			return "NO";
+		return s;
+	}
+
 	public static function buildDetailEntries(c:Citizen):Array<CitizenDetailEntry>
 	{
 		var flags = c.bankRiskFlags.length == 0 ? "" : c.bankRiskFlags.join(", ");
-		var voter = c.voterRegistered ? "YES" : "NO";
+		var voter = c.voterRegistered;
 		var a = c.address;
 		var e = c.emergencyContact;
+		var sexChoices = ["Male", "Female", "Other", "No data"];
+		var currencyChoices = ["LOR", "VAL", "KTH", "MRD", "OST", "No data"];
+		var countryChoices = [
+			"Rep. of Loria", "Kd. of Valdoria",
+			"Kethran Fed", "Meridian Comm.",
+			"Ostmark Conc.", "No data"
+		];
+		var nationalityChoices = countryChoices;
+		var voterChoices = ["YES", "NO", "No data"];
+		var militaryChoices = ["none", "completed", "exempt", "active", "No data"];
+		var criminalChoices = ["none", "minor", "major", "pending", "No data"];
+		var maritalChoices = ["single", "married", "divorced", "widowed", "No data"];
+		var dependentsChoices = ["1", "2", "3", "4", "5", "No data"];
+
 		return [
 			Single({path: "registryId", label: "Registry ID", value: c.registryId}),
 			Pair(
@@ -235,24 +290,24 @@ class CitizenRegistry
 				{path: "passportName", label: "Passport Name", value: c.passportName}
 			),
 			Pair(
-				{path: "dateOfBirth", label: "Date of Birth", value: c.dateOfBirth},
-				{path: "sex", label: "Sex", value: c.sex}
+				{path: "dateOfBirth", label: "Date of Birth", value: c.dateOfBirth, dateField: true},
+				{path: "sex", label: "Sex", value: sexDisplay(c.sex), choices: sexChoices}
 			),
 			Single({path: "placeOfBirth", label: "Place of Birth", value: c.placeOfBirth}),
 			Pair(
-				{path: "nationality", label: "Nationality", value: c.nationality},
-				{path: "maritalStatus", label: "Marital Status", value: c.maritalStatus}
+				{path: "nationality", label: "Nationality", value: c.nationality, choices: nationalityChoices},
+				{path: "maritalStatus", label: "Marital Status", value: c.maritalStatus, choices: maritalChoices}
 			),
 			Pair(
 				{path: "occupation", label: "Occupation", value: c.occupation},
-				{path: "dependents", label: "Dependents", value: Std.string(c.dependents)}
+				{path: "dependents", label: "Dependents", value: c.dependents, choices: dependentsChoices}
 			),
 			Pair(
-				{path: "averageAnnualSalary", label: "Annual Salary", value: Std.string(c.averageAnnualSalary)},
-				{path: "salaryCurrency", label: "Salary Currency", value: c.salaryCurrency}
+				{path: "averageAnnualSalary", label: "Annual Salary", value: Std.string(c.averageAnnualSalary), digitsOnly: true},
+				{path: "salaryCurrency", label: "Salary Currency", value: c.salaryCurrency, choices: currencyChoices}
 			),
 			Pair(
-				{path: "address.country", label: "Address Country", value: a.country},
+				{path: "address.country", label: "Address Country", value: a.country, choices: countryChoices},
 				{path: "country", label: "Country Code", value: c.country}
 			),
 			Pair(
@@ -261,23 +316,23 @@ class CitizenRegistry
 			),
 			Single({path: "address.street", label: "Street", value: a.street}),
 			Pair(
-				{path: "address.postalCode", label: "Postal Code", value: a.postalCode},
-				{path: "yearsAtAddress", label: "Years at Address", value: Std.string(c.yearsAtAddress)}
+				{path: "address.postalCode", label: "Postal Code", value: a.postalCode, digitsOnly: true},
+				{path: "yearsAtAddress", label: "Years at Address", value: Std.string(c.yearsAtAddress), digitsOnly: true}
 			),
 			Pair(
 				{path: "phone", label: "Phone", value: c.phone},
 				{path: "email", label: "Email", value: c.email}
 			),
 			Pair(
-				{path: "passportIssued", label: "Passport Issued", value: c.passportIssued},
-				{path: "passportExpires", label: "Passport Expires", value: c.passportExpires}
+				{path: "passportIssued", label: "Passport Issued", value: c.passportIssued, dateField: true},
+				{path: "passportExpires", label: "Passport Expires", value: c.passportExpires, dateField: true}
 			),
 			Pair(
-				{path: "voterRegistered", label: "Voter Registered", value: voter},
-				{path: "militaryService", label: "Military Service", value: c.militaryService}
+				{path: "voterRegistered", label: "Voter Registered", value: voter, choices: voterChoices},
+				{path: "militaryService", label: "Military Service", value: c.militaryService, choices: militaryChoices}
 			),
 			Pair(
-				{path: "criminalRecord", label: "Criminal Record", value: c.criminalRecord},
+				{path: "criminalRecord", label: "Criminal Record", value: c.criminalRecord, choices: criminalChoices},
 				{path: "bankRiskFlags", label: "Bank Risk Flags", value: flags}
 			),
 			Pair(
@@ -320,7 +375,7 @@ class CitizenRegistry
 			case "passportName": c.passportName;
 			case "dateOfBirth": c.dateOfBirth;
 			case "placeOfBirth": c.placeOfBirth;
-			case "sex": c.sex;
+			case "sex": sexDisplay(c.sex);
 			case "maritalStatus": c.maritalStatus;
 			case "countryFullName": c.countryFullName;
 			case "country": c.country;
@@ -341,9 +396,9 @@ class CitizenRegistry
 			case "heightCm": Std.string(c.heightCm);
 			case "eyeColor": c.eyeColor;
 			case "bloodType": c.bloodType;
-			case "voterRegistered": c.voterRegistered ? "YES" : "NO";
+			case "voterRegistered": c.voterRegistered;
 			case "militaryService": c.militaryService;
-			case "dependents": Std.string(c.dependents);
+			case "dependents": c.dependents;
 			case "criminalRecord": c.criminalRecord;
 			case "bankRiskFlags": c.bankRiskFlags.length == 0 ? "" : c.bankRiskFlags.join(", ");
 			case "emergencyContact.name": c.emergencyContact.name;
@@ -366,7 +421,7 @@ class CitizenRegistry
 			case "passportName": c.passportName = value;
 			case "dateOfBirth": c.dateOfBirth = value;
 			case "placeOfBirth": c.placeOfBirth = value;
-			case "sex": c.sex = value;
+			case "sex": c.sex = sexStore(value);
 			case "maritalStatus": c.maritalStatus = value;
 			case "countryFullName": c.countryFullName = value;
 			case "country": c.country = value;
@@ -393,13 +448,9 @@ class CitizenRegistry
 				c.heightCm = height != null ? height : 0;
 			case "eyeColor": c.eyeColor = value;
 			case "bloodType": c.bloodType = value;
-			case "voterRegistered":
-				var v = value.toLowerCase();
-				c.voterRegistered = v == "yes" || v == "true" || v == "1";
+			case "voterRegistered": c.voterRegistered = value;
 			case "militaryService": c.militaryService = value;
-			case "dependents":
-				var deps = Std.parseInt(value);
-				c.dependents = deps != null ? deps : 0;
+			case "dependents": c.dependents = value;
 			case "criminalRecord": c.criminalRecord = value;
 			case "bankRiskFlags":
 				c.bankRiskFlags = [];
