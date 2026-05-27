@@ -29,6 +29,23 @@ class Passport extends DeskDocument
 		layer.add(nameText);
 	}
 
+	public function moveToDocumentLayer(target:FlxGroup):Void
+	{
+		if (layer == target && textLayer == target)
+			return;
+
+		textLayer.remove(idText, true);
+		textLayer.remove(nameText, true);
+		if (layer.members.indexOf(this) >= 0)
+			layer.remove(this, true);
+
+		textLayer = target;
+		setInteractionLayer(target);
+		target.add(idText);
+		target.add(nameText);
+		target.add(this);
+	}
+
 	public function setCitizen(c:Citizen):Void
 	{
 		citizen = c;
@@ -42,7 +59,17 @@ class Passport extends DeskDocument
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
-		updateTextOverlays();
+		if (!scanLocked)
+			updateTextOverlays();
+	}
+
+	override function onScanLockChanged(locked:Bool):Void
+	{
+		if (locked)
+		{
+			idText.visible = false;
+			nameText.visible = false;
+		}
 	}
 
 	function updateTextOverlays():Void

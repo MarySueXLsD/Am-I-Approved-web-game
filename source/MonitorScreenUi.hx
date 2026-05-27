@@ -46,8 +46,10 @@ class MonitorScreenUi extends FlxGroup
 	var clientList:MonitorClientList;
 	var clientDetail:MonitorClientDetail;
 	var backButton:MonitorBackButton;
+	var printButton:MonitorBackButton;
 	var titleText:FlxText;
 	var selectedCitizen:Citizen = null;
+	public var onPrintRequest:Void->Bool;
 
 	var searchQuery = "";
 	var searchFocused = false;
@@ -101,8 +103,11 @@ class MonitorScreenUi extends FlxGroup
 		add(clientDetail);
 
 		backButton = new MonitorBackButton();
+		printButton = new MonitorBackButton("PRINT >");
 		add(backButton.hit);
 		add(backButton.label);
+		add(printButton.hit);
+		add(printButton.label);
 
 		keyHandler = onKeyDown;
 		view = MainMenu;
@@ -181,6 +186,7 @@ class MonitorScreenUi extends FlxGroup
 		var backY = screenY + screenH - pad - backH;
 		backButton.reposition(backX, backY);
 		backButton.visible = true;
+		printButton.visible = false;
 
 		var listH = backButton.hit.y - listAreaY - 6;
 		if (listH < rowHeight)
@@ -269,7 +275,24 @@ class MonitorScreenUi extends FlxGroup
 					return clientDetail.handleClick(px, py);
 				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
 				{
+					if (clientDetail.hasPendingEdit())
+					{
+						clientDetail.suspendInput();
+						return true;
+					}
 					setView(ClientDatabase);
+					return true;
+				}
+				if (printButton.visible && printButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				{
+					if (clientDetail.hasPendingEdit())
+					{
+						clientDetail.suspendInput();
+						return true;
+					}
+					var printed = onPrintRequest != null && onPrintRequest();
+					if (!printed)
+						clientDetail.showWarning("You need to free up printer\notherwise you cant print.", function() {});
 					return true;
 				}
 				if (clientDetail.handleClick(px, py))
@@ -330,6 +353,8 @@ class MonitorScreenUi extends FlxGroup
 			case ClientDetail:
 				if (backButton.visible)
 					backButton.updateHover(mouse.x, mouse.y);
+				if (printButton.visible)
+					printButton.updateHover(mouse.x, mouse.y);
 		}
 	}
 
@@ -389,7 +414,9 @@ class MonitorScreenUi extends FlxGroup
 		var backH = fontSize + 10;
 		var backW = innerW * 0.35;
 		backButton.layout(screenX + pad, screenY + screenH - pad - backH, backW, backH, fontSize);
+		printButton.layout(screenX + pad + innerW - backW, screenY + screenH - pad - backH, backW, backH, fontSize);
 		backButton.visible = true;
+		printButton.visible = true;
 
 		var listH = backButton.hit.y - listAreaY - 6;
 		if (listH < rowHeight)
@@ -414,7 +441,9 @@ class MonitorScreenUi extends FlxGroup
 		var backH = fontSize + 10;
 		var backW = innerW * 0.35;
 		backButton.layout(screenX + pad, screenY + screenH - pad - backH, backW, backH, fontSize);
+		printButton.layout(screenX + pad + innerW - backW, screenY + screenH - pad - backH, backW, backH, fontSize);
 		backButton.visible = true;
+		printButton.visible = true;
 
 		var panelY = titleText.y + titleText.height + pad;
 		var panelH = backButton.hit.y - panelY - 6;
@@ -436,7 +465,9 @@ class MonitorScreenUi extends FlxGroup
 		var backX = screenX + pad;
 		var backY = screenY + screenH - pad - backH;
 		backButton.reposition(backX, backY);
+		printButton.reposition(screenX + pad + innerW - backButton.hit.width, backY);
 		backButton.visible = true;
+		printButton.visible = true;
 
 		var panelY = titleText.y + titleText.height + pad;
 		var panelH = backButton.hit.y - panelY - 6;
@@ -514,6 +545,7 @@ class MonitorScreenUi extends FlxGroup
 		hideDatabaseListWidgets();
 		clientDetail.hide();
 		backButton.visible = false;
+		printButton.visible = false;
 	}
 
 	function hideDatabaseListWidgets():Void

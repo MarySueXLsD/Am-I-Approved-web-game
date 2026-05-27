@@ -11,6 +11,7 @@ class MonitorBackButton
 {
 	public var hit:FlxSprite;
 	public var label:FlxText;
+	var buttonText:String;
 	var hoverTween:FlxTween;
 	var btnW = 0;
 	var btnH = 0;
@@ -20,10 +21,11 @@ class MonitorBackButton
 
 	public var visible(get, set):Bool;
 
-	public function new()
+	public function new(?text:String = "< BACK")
 	{
+		buttonText = text;
 		hit = new FlxSprite();
-		label = new FlxText(0, 0, 100, "< BACK");
+		label = new FlxText(0, 0, 100, buttonText);
 		hit.visible = false;
 		label.visible = false;
 	}
@@ -49,7 +51,7 @@ class MonitorBackButton
 			hovered = false;
 			drawButton(false);
 			label.setFormat(null, fontSize, MonitorScreenUi.GREEN, "center");
-			label.text = "< BACK";
+			label.text = buttonText;
 			label.scale.set(1, 1);
 			label.color = MonitorScreenUi.GREEN;
 		}

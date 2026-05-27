@@ -12,4 +12,16 @@ typedef LayoutZones = {
 	var windowH:Int;
 	var employerTableY:Int;
 	var employerTableH:Int;
+	var printerX:Int;
+	var printerY:Int;
+	var printerW:Int;
+	var printerH:Int;
+	var calculatorX:Int;
+	var calculatorY:Int;
+	var calculatorW:Int;
+	var calculatorH:Int;
+	var shredderX:Int;
+	var shredderY:Int;
+	var shredderW:Int;
+	var shredderH:Int;
 }

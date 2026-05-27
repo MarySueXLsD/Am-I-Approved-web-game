@@ -5,6 +5,7 @@ import flixel.group.FlxGroup;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
 import openfl.geom.Rectangle;
+import openfl.ui.Keyboard;
 
 class MonitorConfirmDialog extends FlxGroup
 {
@@ -90,6 +91,73 @@ class MonitorConfirmDialog extends FlxGroup
 		visible = true;
 	}
 
+	public function showWarning(areaX:Float, areaY:Float, areaW:Float, areaH:Float, warningText:String,
+			dismiss:Void->Void):Void
+	{
+		onConfirm = dismiss;
+		onCancel = null;
+		fontSize = Std.int(Math.max(11, areaH / 28));
+		btnH = fontSize + 10;
+		btnW = Std.int(Math.max(72, areaW * 0.28));
+
+		overlay.setPosition(areaX, areaY);
+		overlay.makeGraphic(Std.int(areaW), Std.int(areaH), 0xAA000000, true);
+		overlay.updateHitbox();
+
+		var panelW = Std.int(Math.min(areaW - 16, 360));
+		var panelH = Std.int(Math.min(areaH - 16, 130));
+		var panelX = areaX + (areaW - panelW) * 0.5;
+		var panelY = areaY + (areaH - panelH) * 0.5;
+
+		panel.setPosition(panelX, panelY);
+		panel.makeGraphic(panelW, panelH, 0xFF0A120E, true);
+		drawRectBorder(panel, panelW, panelH, MonitorScreenUi.GREEN, 1);
+		panel.updateHitbox();
+
+		var pad = 10;
+		var msgW = panelW - pad * 2;
+		message.text = warningText;
+		message.setFormat(null, fontSize, MonitorScreenUi.GREEN, "center");
+		message.fieldWidth = msgW;
+		message.scale.set(1, 1);
+		message.setPosition(panelX + pad, panelY + pad);
+
+		var btnY = panelY + panelH - pad - btnH;
+		var btnStartX = panelX + (panelW - btnW) * 0.5;
+
+		layoutBtn(confirmBtn, confirmLabel, btnStartX, btnY, btnW, btnH, "OK");
+		cancelBtn.visible = false;
+		cancelLabel.visible = false;
+
+		visible = true;
+	}
+
+	public function handleKey(keyCode:Int):Bool
+	{
+		if (!visible)
+			return false;
+
+		if (keyCode == Keyboard.ENTER)
+		{
+			var cb = onConfirm;
+			close();
+			if (cb != null)
+				cb();
+			return true;
+		}
+
+		if (keyCode == Keyboard.ESCAPE && cancelBtn.visible && onCancel != null)
+		{
+			var cb = onCancel;
+			close();
+			if (cb != null)
+				cb();
+			return true;
+		}
+
+		return false;
+	}
+
 	public function handleClick(mx:Float, my:Float):Bool
 	{
 		if (!visible)
@@ -97,17 +165,19 @@ class MonitorConfirmDialog extends FlxGroup
 
 		if (confirmBtn.overlapsPoint(new FlxPoint(mx, my)))
 		{
+			var cb = onConfirm;
 			close();
-			if (onConfirm != null)
-				onConfirm();
+			if (cb != null)
+				cb();
 			return true;
 		}
 
-		if (cancelBtn.overlapsPoint(new FlxPoint(mx, my)))
+		if (cancelBtn.visible && cancelBtn.overlapsPoint(new FlxPoint(mx, my)))
 		{
+			var cb = onCancel;
 			close();
-			if (onCancel != null)
-				onCancel();
+			if (cb != null)
+				cb();
 			return true;
 		}
 
@@ -119,6 +189,8 @@ class MonitorConfirmDialog extends FlxGroup
 		visible = false;
 		onConfirm = null;
 		onCancel = null;
+		cancelBtn.visible = true;
+		cancelLabel.visible = true;
 	}
 
 	function layoutBtn(btn:FlxSprite, label:FlxText, x:Float, y:Float, w:Int, h:Int, text:String):Void

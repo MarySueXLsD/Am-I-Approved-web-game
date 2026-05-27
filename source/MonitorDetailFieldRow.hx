@@ -23,6 +23,10 @@ class MonitorDetailFieldRow
 	var lastHitW = -1;
 	var lastHitH = -1;
 	var lastFocused = false;
+	var lastIsDropdown = false;
+	var choices:Array<String> = [];
+	public var digitsOnly:Bool = false;
+	public var dateField:Bool = false;
 
 	public function new()
 	{
@@ -38,23 +42,42 @@ class MonitorDetailFieldRow
 		visible = false;
 	}
 
-	public function setup(fieldPath:String, label:String, value:String):Void
+	public function setup(fieldPath:String, label:String, value:String, ?fieldChoices:Array<String>,
+			?isDigitsOnly:Bool, ?isDateField:Bool):Void
 	{
+		var newChoices = fieldChoices != null ? fieldChoices : [];
+		digitsOnly = isDigitsOnly == true;
+		dateField = isDateField == true;
 		if (path == fieldPath)
 		{
+			if (draft == saved || newChoices.length > 0)
+				draft = value;
 			saved = value;
 			fieldLabel = label;
+			choices = newChoices;
 			return;
 		}
 		path = fieldPath;
 		fieldLabel = label;
 		draft = value;
 		saved = value;
+		choices = newChoices;
 		lastBoxW = -1;
 		lastBoxH = -1;
 		lastHitW = -1;
 		lastHitH = -1;
 		lastFocused = false;
+		lastIsDropdown = false;
+	}
+
+	public function isDropdown():Bool
+	{
+		return choices.length > 0;
+	}
+
+	public function getChoices():Array<String>
+	{
+		return choices;
 	}
 
 	public function getDraft():String
@@ -107,11 +130,13 @@ class MonitorDetailFieldRow
 		var boxW = Std.int(Math.max(40, w));
 
 		box.setPosition(x, boxY);
-		if (boxW != lastBoxW || boxH != lastBoxH || isFocused != lastFocused)
+		var isDD = choices.length > 0;
+		if (boxW != lastBoxW || boxH != lastBoxH || isFocused != lastFocused || isDD != lastIsDropdown)
 		{
 			lastBoxW = boxW;
 			lastBoxH = boxH;
 			lastFocused = isFocused;
+			lastIsDropdown = isDD;
 			drawBox(boxW, boxH, isFocused);
 		}
 		box.visible = true;
@@ -133,6 +158,7 @@ class MonitorDetailFieldRow
 		valueText.setFormat(null, fontSize, MonitorScreenUi.GREEN, "left");
 		valueText.color = MonitorScreenUi.GREEN;
 		valueText.fieldWidth = innerW;
+		valueText.wordWrap = false;
 		valueText.scale.set(1, 1);
 		var showCursor = isFocused && cursorFitsAtEnd(innerW);
 		valueText.text = draft + (showCursor ? "_" : "");
@@ -181,6 +207,19 @@ class MonitorDetailFieldRow
 		return v;
 	}
 
+	public function textFits(text:String):Bool
+	{
+		var textPad = 6;
+		var innerW = Std.int(Math.max(20, lastBoxW - textPad * 2));
+		valueText.wordWrap = false;
+		valueText.fieldWidth = innerW;
+		valueText.wordWrap = false;
+		valueText.text = text + "_";
+		var fits = valueText.textField.textWidth <= innerW;
+		valueText.text = draft + (fits ? "_" : "");
+		return fits;
+	}
+
 	function cursorFitsAtEnd(maxW:Int):Bool
 	{
 		valueText.text = draft + "_";
@@ -193,7 +232,29 @@ class MonitorDetailFieldRow
 		var border = isFocused ? MonitorScreenUi.GREEN : MonitorScreenUi.GREEN_DIM;
 		box.makeGraphic(w, h, fill, true);
 		drawRectBorder(box, w, h, border, 1);
+		if (choices.length > 0)
+			drawDropdownArrow(w, h);
 		box.updateHitbox();
+	}
+
+	function drawDropdownArrow(w:Int, h:Int):Void
+	{
+		var arrowH = Std.int(Math.max(3, fontSize * 0.35));
+		var cx = w - arrowH - 6;
+		var cy = Std.int((h - arrowH) * 0.5);
+
+		for (row in 0...arrowH)
+		{
+			var half = arrowH - 1 - row;
+			for (dx in -half...half + 1)
+			{
+				var px = cx + dx;
+				var py = cy + row;
+				if (px >= 1 && px < w - 1 && py >= 1 && py < h - 1)
+					box.pixels.setPixel32(px, py, MonitorScreenUi.GREEN_DIM);
+			}
+		}
+		box.dirty = true;
 	}
 
 	function drawRectBorder(sprite:FlxSprite, width:Int, height:Int, color:Int, size:Int):Void

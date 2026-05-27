@@ -23,6 +23,7 @@ class MagnifyingGlass extends DeskDocument
 	public var coverCam:FlxCamera;
 	var lensMask:Shape;
 	var maskAttached = false;
+	var forceHidden = false;
 
 	public function new(zones:LayoutZones, layer:FlxGroup)
 	{
@@ -88,13 +89,11 @@ class MagnifyingGlass extends DeskDocument
 
 	public function setHidden(hidden:Bool):Void
 	{
-		if (hidden)
-		{
-			if (lensCam != null)
-				lensCam.visible = false;
-			if (coverCam != null)
-				coverCam.visible = false;
-		}
+		forceHidden = hidden;
+		if (lensCam != null)
+			lensCam.visible = !hidden;
+		if (coverCam != null)
+			coverCam.visible = !hidden;
 	}
 
 	override public function hitsPoint(point:FlxPoint):Bool
@@ -175,7 +174,7 @@ class MagnifyingGlass extends DeskDocument
 		if (lensCam == null)
 			return;
 
-		if (!visible || !isOpen || frameWidth < 1)
+		if (forceHidden || !visible || !isOpen || frameWidth < 1)
 		{
 			lensCam.visible = false;
 			if (coverCam != null)
