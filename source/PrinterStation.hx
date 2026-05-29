@@ -52,12 +52,15 @@ class PrinterStation extends FlxGroup
 	var isScanning = false;
 	var isPrinting = false;
 	var printCompleted = false;
+	var lastScannedDoc:DeskDocument;
 	var isPaused = false;
 	var blinkTimer = 0.0;
 	var texW:Float;
 	var texH:Float;
+	var basePaperWidth = 0.0;
 
-	public function new(x:Float, tableY:Float, tableH:Float, targetHeight:Float)
+	public function new(x:Float, tableY:Float, tableH:Float, targetHeight:Float, employerX:Float, employerY:Float, employerW:Float, employerH:Float, clientTableX:Float,
+			clientTableY:Float, clientTableW:Float, clientTableH:Float)
 	{
 		super();
 
@@ -80,7 +83,7 @@ class PrinterStation extends FlxGroup
 		greenBorder = makeLedBorderSprite();
 		greenLed = makeLedFillSprite(GREEN_ON);
 		paper = new FlxSprite();
-		paper.loadGraphic("static/white_paper.png");
+		paper.loadGraphic("static/copy_paper_small.png");
 
 		add(body);
 		add(paper);
@@ -93,6 +96,13 @@ class PrinterStation extends FlxGroup
 
 		syncLedPositions();
 		syncPaperPosition();
+		paper.visible = false;
+	}
+
+	public function setExclusionZones(calculatorX:Float, calculatorY:Float, calculatorW:Float, calculatorH:Float, shredderX:Float, shredderY:Float, shredderW:Float,
+			shredderH:Float):Void
+	{
+		// Kept for API compatibility with existing PlayState wiring.
 	}
 
 	public function setStationCameras(cams:Array<FlxCamera>):Void
@@ -116,6 +126,7 @@ class PrinterStation extends FlxGroup
 		var s = body.scale.x;
 		isPrinting = true;
 		printCompleted = false;
+		paper.angle = 0;
 		if (paperTween != null)
 		{
 			paperTween.cancel();
@@ -131,6 +142,7 @@ class PrinterStation extends FlxGroup
 				isPrinting = false;
 				printCompleted = true;
 				paperTween = null;
+				updatePaperClip();
 			}
 		});
 	}
@@ -138,6 +150,37 @@ class PrinterStation extends FlxGroup
 	public function canAcceptDocument():Bool
 	{
 		return !isScanning && !isPrinting && !printCompleted;
+	}
+
+	public function notifyPrintedPaperPickedUp():Void
+	{
+		if (!printCompleted)
+			return;
+		printCompleted = false;
+		paper.clipRect = null;
+		paper.visible = false;
+	}
+
+	public function hasPrintedPaperReady():Bool
+	{
+		return printCompleted;
+	}
+
+	public function tryPickupPrintedPaper(mx:Float, my:Float):Bool
+	{
+		if (!printCompleted || !paper.visible)
+			return false;
+		return mx >= paper.x && mx < paper.x + paper.width && my >= paper.y && my < paper.y + paper.height;
+	}
+
+	public function getPrintedPaperCenterX():Float
+	{
+		return paper.x + paper.width * 0.5;
+	}
+
+	public function getPrintedPaperCenterY():Float
+	{
+		return paper.y + paper.height * 0.5;
 	}
 
 	public function hasActiveJob():Bool
@@ -157,11 +200,22 @@ class PrinterStation extends FlxGroup
 			scanLineTween.active = !value;
 	}
 
+	public function getLastScannedDocument():DeskDocument
+	{
+		return lastScannedDoc;
+	}
+
+	public function clearLastScannedDocument():Void
+	{
+		lastScannedDoc = null;
+	}
+
 	public function startScan(doc:DeskDocument, onComplete:Void->Void):Void
 	{
 		if (!canAcceptDocument())
 			return;
 
+		lastScannedDoc = doc;
 		isScanning = true;
 		clearScanVisuals();
 
@@ -319,15 +373,24 @@ class PrinterStation extends FlxGroup
 	{
 		var s = body.scale.x;
 		var paperW = (PAPER_RIGHT_X - PAPER_LEFT_X) * s;
+		basePaperWidth = paperW;
 		paper.setGraphicSize(Std.int(Math.max(1, paperW)), 0);
 		paper.updateHitbox();
 		paper.x = body.x + PAPER_LEFT_X * s;
 		paper.y = body.y + PAPER_START_Y * s;
+		paper.angle = 0;
 		updatePaperClip();
 	}
 
 	function updatePaperClip():Void
 	{
+		if (!isPrinting && !printCompleted)
+		{
+			paper.visible = false;
+			paper.clipRect = null;
+			return;
+		}
+
 		var s = body.scale.x;
 		var windowTop = body.y + PAPER_END_Y * s;
 		var windowBottom = body.y + PAPER_START_Y * s;
@@ -345,6 +408,11 @@ class PrinterStation extends FlxGroup
 			paper.clipRect = FlxRect.get();
 		paper.clipRect.set(0, (visTop - paper.y) / sy, paper.frameWidth, (visBottom - visTop) / sy);
 		paper.visible = true;
+	}
+
+	function inRect(px:Float, py:Float, x:Float, y:Float, w:Float, h:Float):Bool
+	{
+		return px >= x && px < x + w && py >= y && py < y + h;
 	}
 
 	function placeLed(led:FlxSprite, texX:Float, texY:Float, drawSize:Float):Void

@@ -4,6 +4,7 @@ import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.FlxState;
 import flixel.group.FlxGroup;
+import flixel.input.keyboard.FlxKey;
 import flixel.text.FlxText;
 import flixel.tweens.FlxEase;
 import flixel.tweens.FlxTween;
@@ -24,7 +25,7 @@ class PlayState extends FlxState
 	var magnifyingGlass:MagnifyingGlass;
 	var monitor:MonitorOverlay;
 	var printerStation:PrinterStation;
-	var shredderObj:FlxSprite;
+	var shredderStation:ShredderStation;
 	var stampPanel:FlxSprite;
 	var calculatorObj:FlxSprite;
 	var calculatorExpandedY = 0.0;
@@ -41,10 +42,14 @@ class PlayState extends FlxState
 	var calculatorDisplayValue = "0";
 	var calculatorAccumulator:Null<Float> = null;
 	var calculatorPendingOp:String = "";
+	var calculatorLastEqualsOp:String = "";
+	var calculatorLastEqualsOperand:Null<Float> = null;
 	var calculatorAwaitingNewInput = false;
 	var calculatorBtnOverlays:Array<FlxSprite>;
 	var calculatorBtnClickTweens:Array<FlxTween>;
+	var calculatorFocused = false;
 	var printerPausedByMonitor = false;
+	var printedPapers:Array<PrinterPaperDocument> = [];
 
 	var clientImg:FlxSprite;
 	var clientFinalX:Float;
@@ -206,7 +211,8 @@ class PlayState extends FlxState
 
 		var printerMargin = Std.int(Math.max(4, employerTableH * 0.01));
 		var printerTargetH = employerTableH * 0.2;
-		printerStation = new PrinterStation(employerX + printerMargin, employerTableY, employerTableH, printerTargetH);
+		printerStation = new PrinterStation(employerX + printerMargin, employerTableY, employerTableH, printerTargetH, employerX, employerTableY, employerW, employerTableH, 0,
+			clientTableY, leftW, clientTableH);
 
 		calculatorObj = new FlxSprite();
 		calculatorObj.loadGraphic("static/calculator.png");
@@ -219,15 +225,18 @@ class PlayState extends FlxState
 		calculatorExpandedY = calculatorObj.y;
 		calculatorCollapsedY = employerTableY + employerTableH - calculatorObj.height * CALC_VISIBLE_TOP_RATIO;
 
-		shredderObj = new FlxSprite();
-		shredderObj.loadGraphic("static/shredder.png");
-		var shredderScale = (printerTargetH / shredderObj.frameHeight) * 0.75;
-		shredderObj.scale.set(shredderScale, shredderScale);
-		shredderObj.updateHitbox();
+		var shredderBody = new FlxSprite();
+		shredderBody.loadGraphic("static/shredder.png");
+		var shredderScale = (printerTargetH / shredderBody.frameHeight) * 0.75;
+		shredderBody.scale.set(shredderScale, shredderScale);
+		shredderBody.updateHitbox();
 		var printerRight = printerStation.getBodyX() + printerStation.getBodyW();
 		var calcLeft = calculatorObj.x;
-		shredderObj.x = printerRight + (calcLeft - printerRight - shredderObj.width) * 0.5;
-		shredderObj.y = employerTableY + employerTableH - shredderObj.height;
+		shredderBody.x = printerRight + (calcLeft - printerRight - shredderBody.width) * 0.5;
+		shredderBody.y = employerTableY + employerTableH - shredderBody.height;
+		shredderStation = new ShredderStation(shredderBody);
+		printerStation.setExclusionZones(calculatorObj.x, calculatorObj.y, calculatorObj.width, calculatorObj.height, shredderStation.getBodyX(),
+			shredderStation.getBodyY(), shredderStation.getBodyW(), shredderStation.getBodyH());
 
 		calculatorToggleOverlay = new FlxSprite();
 		calculatorToggleOverlay.makeGraphic(1, 1, 0xFFFFFFFF, true);
@@ -286,10 +295,10 @@ class PlayState extends FlxState
 			calculatorY: Std.int(calculatorObj.y),
 			calculatorW: Std.int(calculatorObj.width),
 			calculatorH: Std.int(calculatorObj.height),
-			shredderX: Std.int(shredderObj.x),
-			shredderY: Std.int(shredderObj.y),
-			shredderW: Std.int(shredderObj.width),
-			shredderH: Std.int(shredderObj.height)
+			shredderX: Std.int(shredderStation.getBodyX()),
+			shredderY: Std.int(shredderStation.getBodyY()),
+			shredderW: Std.int(shredderStation.getBodyW()),
+			shredderH: Std.int(shredderStation.getBodyH())
 		};
 		documentsAbove = new FlxGroup();
 		documentsBelow = new FlxGroup();
@@ -308,6 +317,7 @@ class PlayState extends FlxState
 		documentsAbove.add(idDocument);
 		documentsAbove.add(magnifyingGlass);
 		DeskDocument.onDrawLayerChanged = moveDocumentToLayer;
+		DeskDocument.onCanStartDrag = isTopmostDocumentAtPoint;
 		addDeskPropsAndDocuments();
 
 		var lc = magnifyingGlass.lensCam;
@@ -319,7 +329,7 @@ class PlayState extends FlxState
 			dotGrid.cameras = [FlxG.camera, lc];
 			stampPanel.cameras = [FlxG.camera];
 			printerStation.setStationCameras([FlxG.camera]);
-			shredderObj.cameras = [FlxG.camera];
+			shredderStation.setStationCameras([FlxG.camera]);
 			calculatorObj.cameras = [FlxG.camera];
 			calculatorToggleOverlay.cameras = [FlxG.camera];
 			calculatorToggleLabel.cameras = [FlxG.camera];
@@ -344,7 +354,7 @@ class PlayState extends FlxState
 			computerHud.cameras = [FlxG.camera, cc];
 			stampPanel.cameras = [FlxG.camera, cc];
 			printerStation.setStationCameras([FlxG.camera, cc]);
-			shredderObj.cameras = [FlxG.camera, cc];
+			shredderStation.setStationCameras([FlxG.camera, cc]);
 			calculatorObj.cameras = [FlxG.camera, cc];
 			calculatorToggleOverlay.cameras = [FlxG.camera, cc];
 			calculatorToggleLabel.cameras = [FlxG.camera, cc];
@@ -359,6 +369,7 @@ class PlayState extends FlxState
 		{
 			var citizen = CitizenRegistry.all[0];
 			passport.setCitizen(citizen);
+			idDocument.setCitizen(citizen);
 			clientDialog.setCitizenName(citizen.firstName + " " + citizen.lastName);
 		}
 
@@ -383,6 +394,9 @@ class PlayState extends FlxState
 		updateCalculatorButtonOverlay();
 
 		var p = FlxG.mouse.getViewPosition();
+
+		if (!monitor.isActive() && FlxG.mouse.justPressed && !MonitorOverlay.blocksWorldInput())
+			tryPickupPrintedPaper(p);
 
 		if (monitor.isActive())
 		{
@@ -409,6 +423,8 @@ class PlayState extends FlxState
 		syncDocumentLayers();
 		updateCalculatorToggleInput(p);
 		updateCalculatorButtonInput(p);
+		updateCalculatorFocus(p);
+		updateCalculatorKeyboardInput();
 
 		if (!FlxG.mouse.justPressed)
 			return;
@@ -427,7 +443,7 @@ class PlayState extends FlxState
 		add(documentsBelow);
 		add(stampPanel);
 		add(printerStation);
-		add(shredderObj);
+		add(shredderStation);
 		add(calculatorObj);
 		add(calculatorToggleOverlay);
 		add(calculatorToggleLabel);
@@ -443,11 +459,27 @@ class PlayState extends FlxState
 		moveDocumentToLayer(passport);
 		moveDocumentToLayer(idDocument);
 		moveDocumentToLayer(magnifyingGlass);
+		for (paper in printedPapers)
+			movePrintedPaperToLayer(paper);
+		syncOpenDocumentCameras();
+	}
+
+	function movePrintedPaperToLayer(paper:PrinterPaperDocument):Void
+	{
+		var target = paper.isOpenOnEmployerTable() ? documentsBelow : documentsAbove;
+		paper.moveToDocumentLayer(target);
 	}
 
 	function moveDocumentToLayer(doc:DeskDocument):Void
 	{
 		var target = doc.visible && doc.isOpenOnEmployerTable() ? documentsBelow : documentsAbove;
+		var printedPaper = Std.downcast(doc, PrinterPaperDocument);
+		if (printedPaper != null)
+		{
+			printedPaper.moveToDocumentLayer(target);
+			return;
+		}
+
 		var passportDoc = Std.downcast(doc, Passport);
 		if (passportDoc != null)
 		{
@@ -455,7 +487,58 @@ class PlayState extends FlxState
 			return;
 		}
 
+		var idDoc = Std.downcast(doc, IdDocument);
+		if (idDoc != null)
+		{
+			idDoc.moveToDocumentLayer(target);
+			return;
+		}
+
 		doc.moveToLayer(target);
+	}
+
+	function syncOpenDocumentCameras():Void
+	{
+		if (magnifyingGlass == null)
+			return;
+
+		syncDocumentLensCameras(passport);
+		syncDocumentLensCameras(idDocument);
+	}
+
+	function syncDocumentLensCameras(doc:DeskDocument):Void
+	{
+		if (doc == null || magnifyingGlass == null)
+			return;
+
+		var updated = [FlxG.camera];
+		var lensCam = magnifyingGlass.lensCam;
+		var coverCam = magnifyingGlass.coverCam;
+		var lensActive = lensCam != null && magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
+
+		if (!lensActive)
+		{
+			doc.cameras = updated;
+			return;
+		}
+
+		var docGroup = documentsAbove.members.indexOf(doc) >= 0 ? documentsAbove : (documentsBelow.members.indexOf(doc) >= 0 ? documentsBelow : null);
+		var magnifierGroup = documentsAbove.members.indexOf(magnifyingGlass) >= 0 ? documentsAbove : (documentsBelow.members.indexOf(magnifyingGlass) >= 0 ? documentsBelow : null);
+
+		var shouldZoom = false;
+		if (docGroup != null && magnifierGroup != null && docGroup == magnifierGroup && doc.isCurrentlyOpen())
+		{
+			var docIndex = docGroup.members.indexOf(doc);
+			var magnifierIndex = magnifierGroup.members.indexOf(magnifyingGlass);
+			shouldZoom = docIndex >= 0 && magnifierIndex >= 0 && docIndex < magnifierIndex;
+		}
+
+		if (shouldZoom && lensCam != null)
+			updated.push(lensCam);
+		if (!shouldZoom && coverCam != null)
+			updated.push(coverCam);
+
+		doc.cameras = updated;
 	}
 
 	function updateCalculatorDisplayVisuals(elapsed:Float):Void
@@ -483,7 +566,7 @@ class PlayState extends FlxState
 		var fontSize = Std.int(Math.max(12, h * 0.62));
 		calculatorDisplayText.setFormat(null, fontSize, FlxColor.fromRGB(76, 118, 84), "right");
 		calculatorDisplayText.setBorderStyle(OUTLINE, FlxColor.fromRGB(12, 28, 14), 1);
-		calculatorDisplayText.text = calculatorDisplayValue;
+		calculatorDisplayText.text = formatCalculatorForUi(calculatorDisplayValue);
 		calculatorDisplayText.alpha = 0.82;
 	}
 
@@ -512,6 +595,11 @@ class PlayState extends FlxState
 		zones.calculatorY = Std.int(calculatorObj.y);
 		zones.calculatorW = Std.int(calculatorObj.width);
 		zones.calculatorH = Std.int(calculatorObj.height * visibleRatio);
+		if (printerStation != null)
+		{
+			printerStation.setExclusionZones(zones.calculatorX, zones.calculatorY, zones.calculatorW, zones.calculatorH, zones.shredderX, zones.shredderY, zones.shredderW,
+				zones.shredderH);
+		}
 	}
 
 	function isDeskItemBeingDragged():Bool
@@ -638,6 +726,143 @@ class PlayState extends FlxState
 		}
 	}
 
+	function updateCalculatorFocus(mousePos:flixel.math.FlxPoint):Void
+	{
+		if (!FlxG.mouse.justPressed)
+			return;
+		if (isDeskItemBeingDragged())
+		{
+			calculatorFocused = false;
+			return;
+		}
+
+		calculatorFocused = isPointOnCalculator(mousePos);
+	}
+
+	function isPointOnCalculator(mousePos:flixel.math.FlxPoint):Bool
+	{
+		if (calculatorObj.overlapsPoint(mousePos))
+			return true;
+		if (calculatorToggleOverlay.overlapsPoint(mousePos))
+			return true;
+		if (calculatorDisplayScan.overlapsPoint(mousePos))
+			return true;
+		for (overlay in calculatorBtnOverlays)
+		{
+			if (overlay.overlapsPoint(mousePos))
+				return true;
+		}
+		return false;
+	}
+
+	function updateCalculatorKeyboardInput():Void
+	{
+		if (!calculatorFocused || isDeskItemBeingDragged())
+			return;
+
+		if (FlxG.keys.anyJustPressed([FlxKey.BACKSPACE]))
+		{
+			pressCalculatorLabel("CE");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.ENTER]))
+		{
+			pressCalculatorLabel("=");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.SLASH, FlxKey.NUMPADSLASH]))
+		{
+			pressCalculatorLabel("÷");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADMULTIPLY]) || (FlxG.keys.anyJustPressed([FlxKey.EIGHT]) && FlxG.keys.pressed.SHIFT))
+		{
+			pressCalculatorLabel("*");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.MINUS, FlxKey.NUMPADMINUS]))
+		{
+			pressCalculatorLabel("-");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADPLUS]) || (FlxG.keys.anyJustPressed([FlxKey.PLUS]) && FlxG.keys.pressed.SHIFT))
+		{
+			pressCalculatorLabel("+");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.PLUS]) && !FlxG.keys.pressed.SHIFT)
+		{
+			pressCalculatorLabel("=");
+			return;
+		}
+
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADZERO, FlxKey.ZERO]))
+		{
+			pressCalculatorLabel("0");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADONE, FlxKey.ONE]))
+		{
+			pressCalculatorLabel("1");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADTWO, FlxKey.TWO]))
+		{
+			pressCalculatorLabel("2");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADTHREE, FlxKey.THREE]))
+		{
+			pressCalculatorLabel("3");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADFOUR, FlxKey.FOUR]))
+		{
+			pressCalculatorLabel("4");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADFIVE, FlxKey.FIVE]))
+		{
+			pressCalculatorLabel("5");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADSIX, FlxKey.SIX]))
+		{
+			pressCalculatorLabel("6");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADSEVEN, FlxKey.SEVEN]))
+		{
+			pressCalculatorLabel("7");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADEIGHT, FlxKey.EIGHT]))
+		{
+			pressCalculatorLabel("8");
+			return;
+		}
+		if (FlxG.keys.anyJustPressed([FlxKey.NUMPADNINE, FlxKey.NINE]))
+		{
+			pressCalculatorLabel("9");
+			return;
+		}
+	}
+
+	function pressCalculatorLabel(label:String):Void
+	{
+		var idx = CALC_BTN_LABELS.indexOf(label);
+		if (idx < 0)
+			return;
+		handleCalculatorButtonPress(idx);
+		playCalculatorButtonClickAnim(idx);
+	}
+
 	function handleCalculatorButtonPress(index:Int):Void
 	{
 		if (index < 0 || index >= CALC_BTN_LABELS.length)
@@ -668,6 +893,8 @@ class PlayState extends FlxState
 		calculatorDisplayValue = "0";
 		calculatorAccumulator = null;
 		calculatorPendingOp = "";
+		calculatorLastEqualsOp = "";
+		calculatorLastEqualsOperand = null;
 		calculatorAwaitingNewInput = false;
 	}
 
@@ -690,6 +917,8 @@ class PlayState extends FlxState
 		if (calculatorAwaitingNewInput)
 		{
 			calculatorDisplayValue = digit;
+			calculatorLastEqualsOp = "";
+			calculatorLastEqualsOperand = null;
 			calculatorAwaitingNewInput = false;
 			return;
 		}
@@ -713,6 +942,8 @@ class PlayState extends FlxState
 		if (calculatorAwaitingNewInput)
 		{
 			calculatorDisplayValue = "0.";
+			calculatorLastEqualsOp = "";
+			calculatorLastEqualsOperand = null;
 			calculatorAwaitingNewInput = false;
 			return;
 		}
@@ -750,6 +981,8 @@ class PlayState extends FlxState
 		}
 
 		calculatorPendingOp = op;
+		calculatorLastEqualsOp = "";
+		calculatorLastEqualsOperand = null;
 		calculatorAwaitingNewInput = true;
 	}
 
@@ -757,22 +990,43 @@ class PlayState extends FlxState
 	{
 		if (isCalculatorError())
 			return;
-		if (calculatorPendingOp == "" || calculatorAccumulator == null)
+
+		if (calculatorPendingOp != "" && calculatorAccumulator != null)
+		{
+			var current = parseCalculatorDisplay();
+			if (current == null)
+				return;
+			var result = calculateBinary(calculatorAccumulator, current, calculatorPendingOp);
+			if (result == null)
+			{
+				showCalculatorError();
+				return;
+			}
+
+			calculatorDisplayValue = formatCalculatorNumber(result);
+			calculatorAccumulator = result;
+			calculatorLastEqualsOp = calculatorPendingOp;
+			calculatorLastEqualsOperand = current;
+			calculatorPendingOp = "";
+			calculatorAwaitingNewInput = true;
+			return;
+		}
+
+		if (calculatorLastEqualsOp == "" || calculatorLastEqualsOperand == null)
 			return;
 
 		var current = parseCalculatorDisplay();
 		if (current == null)
 			return;
-		var result = calculateBinary(calculatorAccumulator, current, calculatorPendingOp);
-		if (result == null)
+		var chained = calculateBinary(current, calculatorLastEqualsOperand, calculatorLastEqualsOp);
+		if (chained == null)
 		{
 			showCalculatorError();
 			return;
 		}
 
-		calculatorDisplayValue = formatCalculatorNumber(result);
-		calculatorAccumulator = result;
-		calculatorPendingOp = "";
+		calculatorDisplayValue = formatCalculatorNumber(chained);
+		calculatorAccumulator = chained;
 		calculatorAwaitingNewInput = true;
 	}
 
@@ -837,9 +1091,49 @@ class PlayState extends FlxState
 		}
 		if (s == "-0")
 			s = "0";
-		if (s.length > CALC_MAX_DISPLAY_CHARS)
-			s = s.substr(0, CALC_MAX_DISPLAY_CHARS);
 		return s;
+	}
+
+	function formatCalculatorForUi(value:String):String
+	{
+		if (value == null)
+			return "0";
+		if (value == "Error")
+			return value;
+		if (value == "Infinity")
+			return "Infinity :)";
+		if (value == "-Infinity")
+			return "-Infinity :)";
+		if (value.length <= CALC_MAX_DISPLAY_CHARS)
+			return value;
+
+		var n = Std.parseFloat(value);
+		if (Math.isNaN(n))
+			return value;
+		if (n == 0)
+			return "0";
+
+		return formatCompactScientific(n);
+	}
+
+	function formatCompactScientific(n:Float):String
+	{
+		var sign = n < 0 ? "-" : "";
+		var absN = Math.abs(n);
+		var exp = Std.int(Math.floor(Math.log(absN) / Math.log(10)));
+
+		// Prefer 4-digit mantissa style (e.g. 3232e2), reduce only if needed to fit.
+		for (mantissaDigits in [4, 3, 2, 1])
+		{
+			var power = exp - (mantissaDigits - 1);
+			var mantissaInt = Std.int(Math.round(absN / Math.pow(10, power)));
+			var out = sign + Std.string(mantissaInt) + "e" + Std.string(power);
+			if (out.length <= CALC_MAX_DISPLAY_CHARS)
+				return out;
+		}
+
+		// Last fallback (still scientific, never clipped).
+		return sign + "1e" + Std.string(exp);
 	}
 
 	function playCalculatorButtonClickAnim(index:Int):Void
@@ -921,6 +1215,36 @@ class PlayState extends FlxState
 		return true;
 	}
 
+	function handleCopyPaperDroppedOnShredder(doc:DeskDocument):Bool
+	{
+		var paper = Std.downcast(doc, PrinterPaperDocument);
+		if (paper == null)
+			return false;
+		if (!shredderStation.canAcceptDocument())
+			return false;
+
+		bringPaperAboveShredder(paper);
+		return shredderStation.startShred(paper, function()
+		{
+			removePrintedPaper(paper);
+		});
+	}
+
+	function bringPaperAboveShredder(paper:PrinterPaperDocument):Void
+	{
+		if (documentsAbove.members.indexOf(paper) < 0)
+		{
+			if (documentsBelow.members.indexOf(paper) >= 0)
+				documentsBelow.remove(paper, true);
+			documentsAbove.add(paper);
+		}
+	}
+
+	function removePrintedPaper(paper:PrinterPaperDocument):Void
+	{
+		printedPapers.remove(paper);
+	}
+
 	function syncPrinterPauseForMonitor():Void
 	{
 		var shouldPause = monitor.isActive() && printerStation.hasActiveJob();
@@ -939,9 +1263,43 @@ class PlayState extends FlxState
 		return true;
 	}
 
+	function tryPickupPrintedPaper(p:flixel.math.FlxPoint):Void
+	{
+		if (!printerStation.tryPickupPrintedPaper(p.x, p.y))
+			return;
+
+		spawnPrintedPaper(printerStation.getPrintedPaperCenterX(), printerStation.getPrintedPaperCenterY(), p.x, p.y);
+	}
+
+	function spawnPrintedPaper(centerX:Float, centerY:Float, ?dragMouseX:Float, ?dragMouseY:Float):Void
+	{
+		var scannedFrom = printerStation.getLastScannedDocument();
+		printerStation.clearLastScannedDocument();
+		var paper = new PrinterPaperDocument(zones, documentsAbove, scannedFrom);
+		var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
+		paper.cameras = [FlxG.camera];
+		if (lensCam != null)
+			paper.cameras.push(lensCam);
+		paper.onPickedUp = function()
+		{
+			printerStation.notifyPrintedPaperPickedUp();
+		};
+		paper.onDroppedOnShredder = handleCopyPaperDroppedOnShredder;
+		paper.setPosition(centerX - paper.width * 0.5, centerY - paper.height * 0.5);
+		documentsAbove.add(paper);
+		printedPapers.push(paper);
+
+		if (dragMouseX != null && dragMouseY != null)
+			paper.beginPickupDrag(dragMouseX, dragMouseY);
+	}
+
 	function spawnPassport():Void
 	{
 		passport.prepareClientHandoff();
+		var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
+		passport.cameras = [FlxG.camera];
+		if (lensCam != null)
+			passport.cameras.push(lensCam);
 
 		if (documentsAbove.members.indexOf(passport) >= 0)
 			documentsAbove.remove(passport, true);
@@ -981,6 +1339,35 @@ class PlayState extends FlxState
 				return true;
 		}
 		return false;
+	}
+
+	function isTopmostDocumentAtPoint(candidate:DeskDocument, p:flixel.math.FlxPoint):Bool
+	{
+		return frontmostDocumentAtPoint(p) == candidate;
+	}
+
+	function frontmostDocumentAtPoint(p:flixel.math.FlxPoint):DeskDocument
+	{
+		var doc = frontmostDocumentInGroupAtPoint(documentsAbove, p);
+		if (doc != null)
+			return doc;
+		return frontmostDocumentInGroupAtPoint(documentsBelow, p);
+	}
+
+	function frontmostDocumentInGroupAtPoint(group:FlxGroup, p:flixel.math.FlxPoint):DeskDocument
+	{
+		for (i in 0...group.members.length)
+		{
+			var idx = group.members.length - 1 - i;
+			var member = group.members[idx];
+			if (member == null)
+				continue;
+			var doc:DeskDocument = Std.downcast(member, DeskDocument);
+			if (doc == null || !doc.visible || !doc.hitsPoint(p))
+				continue;
+			return doc;
+		}
+		return null;
 	}
 
 	function createTiledSprite(path:String, x:Int, y:Int, w:Int, h:Int):FlxSprite

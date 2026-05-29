@@ -14,6 +14,36 @@ typedef CitizenEmergencyContact = {
 	var phone:String;
 }
 
+typedef CitizenPassportDocument = {
+	var passportId:String;
+	var nationalId:String;
+	var firstName:String;
+	var lastName:String;
+	var dateOfBirth:String;
+	var sex:String;
+	var placeOfBirth:String;
+	var issuingAuthority:String;
+	var dateOfExpiration:String;
+	var issuedDate:String;
+}
+
+typedef CitizenIdCardDocument = {
+	var nationalId:String;
+	var firstName:String;
+	var lastName:String;
+	var dateOfBirth:String;
+	var sex:String;
+	var address:CitizenAddress;
+}
+
+typedef CitizenEmploymentContractDocument = {
+	var firstName:String;
+	var lastName:String;
+	var occupation:String;
+	var annualSalary:Int;
+	var salaryCurrency:String;
+}
+
 typedef Citizen = {
 	var registryId:String;
 	var passportId:String;
@@ -47,4 +77,7 @@ typedef Citizen = {
 	var criminalRecord:String;
 	var yearsAtAddress:Int;
 	var dependents:String;
+	var passportDoc:CitizenPassportDocument;
+	var idCardDoc:CitizenIdCardDocument;
+	var employmentContractDoc:CitizenEmploymentContractDocument;
 }

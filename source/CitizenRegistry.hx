@@ -73,6 +73,10 @@ class CitizenRegistry
 		{
 			var addr:Dynamic = entry.address;
 			var emergency:Dynamic = entry.emergencyContact;
+			var passportDoc:Dynamic = entry.passportDoc;
+			var idCardDoc:Dynamic = entry.idCardDoc;
+			var employmentContractDoc:Dynamic = entry.employmentContractDoc;
+			var idCardAddress:Dynamic = idCardDoc != null ? idCardDoc.address : null;
 			var flags:Array<String> = [];
 			if (entry.bankRiskFlags != null)
 			{
@@ -122,7 +126,40 @@ class CitizenRegistry
 				bankRiskFlags: flags,
 				criminalRecord: entry.criminalRecord,
 				yearsAtAddress: entry.yearsAtAddress,
-				dependents: Std.string(entry.dependents)
+				dependents: Std.string(entry.dependents),
+				passportDoc: {
+					passportId: passportDoc != null ? passportDoc.passportId : "",
+					nationalId: passportDoc != null ? passportDoc.nationalId : "",
+					firstName: passportDoc != null ? passportDoc.firstName : "",
+					lastName: passportDoc != null ? passportDoc.lastName : "",
+					dateOfBirth: passportDoc != null ? passportDoc.dateOfBirth : "",
+					sex: passportDoc != null ? passportDoc.sex : "",
+					placeOfBirth: passportDoc != null ? passportDoc.placeOfBirth : "",
+					issuingAuthority: passportDoc != null ? passportDoc.issuingAuthority : "",
+					dateOfExpiration: passportDoc != null ? passportDoc.dateOfExpiration : "",
+					issuedDate: passportDoc != null ? passportDoc.issuedDate : ""
+				},
+				idCardDoc: {
+					nationalId: idCardDoc != null ? idCardDoc.nationalId : entry.nationalId,
+					firstName: idCardDoc != null ? idCardDoc.firstName : entry.firstName,
+					lastName: idCardDoc != null ? idCardDoc.lastName : entry.lastName,
+					dateOfBirth: idCardDoc != null ? idCardDoc.dateOfBirth : entry.dateOfBirth,
+					sex: idCardDoc != null ? idCardDoc.sex : entry.sex,
+					address: {
+						street: idCardAddress != null ? idCardAddress.street : (addr != null ? addr.street : ""),
+						city: idCardAddress != null ? idCardAddress.city : (addr != null ? addr.city : ""),
+						region: idCardAddress != null ? idCardAddress.region : (addr != null ? addr.region : ""),
+						postalCode: idCardAddress != null ? idCardAddress.postalCode : (addr != null ? addr.postalCode : ""),
+						country: idCardAddress != null ? idCardAddress.country : (addr != null ? addr.country : "")
+					}
+				},
+				employmentContractDoc: {
+					firstName: employmentContractDoc != null ? employmentContractDoc.firstName : entry.firstName,
+					lastName: employmentContractDoc != null ? employmentContractDoc.lastName : entry.lastName,
+					occupation: employmentContractDoc != null ? employmentContractDoc.occupation : entry.occupation,
+					annualSalary: employmentContractDoc != null ? employmentContractDoc.annualSalary : entry.averageAnnualSalary,
+					salaryCurrency: employmentContractDoc != null ? employmentContractDoc.salaryCurrency : entry.salaryCurrency
+				}
 			});
 		}
 	}
@@ -171,7 +208,40 @@ class CitizenRegistry
 			bankRiskFlags: c.bankRiskFlags,
 			criminalRecord: c.criminalRecord,
 			yearsAtAddress: c.yearsAtAddress,
-			dependents: c.dependents
+			dependents: c.dependents,
+			passportDoc: {
+				passportId: c.passportDoc.passportId,
+				nationalId: c.passportDoc.nationalId,
+				firstName: c.passportDoc.firstName,
+				lastName: c.passportDoc.lastName,
+				dateOfBirth: c.passportDoc.dateOfBirth,
+				sex: c.passportDoc.sex,
+				placeOfBirth: c.passportDoc.placeOfBirth,
+				issuingAuthority: c.passportDoc.issuingAuthority,
+				dateOfExpiration: c.passportDoc.dateOfExpiration,
+				issuedDate: c.passportDoc.issuedDate
+			},
+			idCardDoc: {
+				nationalId: c.idCardDoc.nationalId,
+				firstName: c.idCardDoc.firstName,
+				lastName: c.idCardDoc.lastName,
+				dateOfBirth: c.idCardDoc.dateOfBirth,
+				sex: c.idCardDoc.sex,
+				address: {
+					street: c.idCardDoc.address.street,
+					city: c.idCardDoc.address.city,
+					region: c.idCardDoc.address.region,
+					postalCode: c.idCardDoc.address.postalCode,
+					country: c.idCardDoc.address.country
+				}
+			},
+			employmentContractDoc: {
+				firstName: c.employmentContractDoc.firstName,
+				lastName: c.employmentContractDoc.lastName,
+				occupation: c.employmentContractDoc.occupation,
+				annualSalary: c.employmentContractDoc.annualSalary,
+				salaryCurrency: c.employmentContractDoc.salaryCurrency
+			}
 		};
 	}
 

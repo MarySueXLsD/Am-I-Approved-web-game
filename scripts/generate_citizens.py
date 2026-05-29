@@ -111,6 +111,7 @@ def main():
             ],
             "streets": ["Alden", "Merrow", "Kestral", "Northvale", "Bracken"],
             "passportName": lambda fn, ln: f"{ln.upper()}, {fn}",
+            "passportIssuingAuthority": "Aldenport Ministry of Civil Affairs",
             "salaryRange": (32000, 95000),
             "postalLen": 6,
         },
@@ -132,6 +133,7 @@ def main():
             ],
             "streets": ["Crown", "Harwick", "Eastmere", "Stone", "Whit"],
             "passportName": lambda fn, ln: f"{fn.upper()} {ln.upper()}",
+            "passportIssuingAuthority": "Kingsport Royal Identity Office",
             "salaryRange": (25000, 78000),
             "postalLen": 5,
         },
@@ -153,6 +155,7 @@ def main():
             ],
             "streets": ["Veld", "Iron", "Colden", "Ash", "Glimmer"],
             "passportName": lambda fn, ln: f"{fn} {ln[0]}. {ln}",
+            "passportIssuingAuthority": "Veldmark Federal Registry Building",
             "salaryRange": (30000, 110000),
             "postalLen": 7,
         },
@@ -176,6 +179,7 @@ def main():
             "passportName": lambda fn, ln: (
                 f"{fn} {random.choice(['Elira', 'Torin', 'Sera', 'Davan'])} {ln}"
             ),
+            "passportIssuingAuthority": "Solhaven Commonwealth Documentation Hall",
             "salaryRange": (180000, 850000),
             "postalLen": 6,
         },
@@ -197,6 +201,7 @@ def main():
             ],
             "streets": ["Grim", "Falken", "Dusk", "Wolf", "Eisen"],
             "passportName": lambda fn, ln: f"{ln} / {fn}",
+            "passportIssuingAuthority": "Grimwald Concordat Civic Registry",
             "salaryRange": (28000, 120000),
             "postalLen": 5,
         },
@@ -275,7 +280,13 @@ def main():
             tax_id = f"{country['taxPrefix']}-{digest}"
 
             issue = date(2020, 1, 1) + timedelta(days=random.randint(0, 1800))
-            expiry = issue.replace(year=issue.year + 10)
+            try:
+                expiry = issue.replace(year=issue.year + 10)
+            except ValueError:
+                # Handles leap-day issue dates by rolling to Feb 28.
+                expiry = issue.replace(month=2, day=28, year=issue.year + 10)
+            sex_value = random.choice(sexes)
+            place_of_birth = f"{random.choice(country['cities'])}, {country['name']}"
 
             citizens.append(
                 {
@@ -290,8 +301,8 @@ def main():
                     "countryFullName": country["name"],
                     "nationality": country["name"],
                     "dateOfBirth": dob.isoformat(),
-                    "placeOfBirth": f"{random.choice(country['cities'])}, {country['name']}",
-                    "sex": random.choice(sexes),
+                    "placeOfBirth": place_of_birth,
+                    "sex": sex_value,
                     "maritalStatus": random.choice(marital),
                     "occupation": occ,
                     "averageAnnualSalary": salary,
@@ -323,6 +334,39 @@ def main():
                     "criminalRecord": "none",
                     "yearsAtAddress": random.randint(1, 25),
                     "dependents": random.randint(0, 3) if age > 22 else 0,
+                    "passportDoc": {
+                        "passportId": passport_id,
+                        "nationalId": national_id,
+                        "firstName": fn,
+                        "lastName": ln,
+                        "dateOfBirth": dob.isoformat(),
+                        "sex": sex_value,
+                        "placeOfBirth": place_of_birth,
+                        "issuingAuthority": country["passportIssuingAuthority"],
+                        "dateOfExpiration": "",
+                        "issuedDate": issue.isoformat(),
+                    },
+                    "idCardDoc": {
+                        "nationalId": national_id,
+                        "firstName": fn,
+                        "lastName": ln,
+                        "dateOfBirth": dob.isoformat(),
+                        "sex": sex_value,
+                        "address": {
+                            "street": street,
+                            "city": city,
+                            "region": region,
+                            "postalCode": postal,
+                            "country": country["name"],
+                        },
+                    },
+                    "employmentContractDoc": {
+                        "firstName": fn,
+                        "lastName": ln,
+                        "occupation": occ,
+                        "annualSalary": salary,
+                        "salaryCurrency": country["currency"],
+                    },
                 }
             )
 
