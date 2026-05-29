@@ -149,6 +149,8 @@ class MagnifyingGlass extends DeskDocument
 			var doc = Std.downcast(member, DeskDocument);
 			if (doc == null)
 				continue;
+			if (Std.downcast(doc, Passport) != null)
+				continue;
 
 			var shouldZoom = i < myIndex && doc.isOpen;
 			var shouldCover = !shouldZoom;

@@ -3,6 +3,7 @@ package;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.group.FlxGroup;
+import openfl.display.BitmapData;
 import flixel.math.FlxMath;
 import flixel.math.FlxPoint;
 import flixel.math.FlxRect;
@@ -17,18 +18,22 @@ class DeskDocument extends FlxSprite
 	var layer:FlxGroup;
 	var closedPath:String;
 	var openPath:String;
+	var customOpenGraphic:BitmapData;
 	var openSizeMultiplier:Float;
 	var closedDisplayWidth:Float;
 	var dragging = false;
 	var snapping = false;
 	var scanLocked = false;
+	var shredLocked = false;
+	var snapTween:FlxTween;
 	var dragGrabNormX = 0.0;
 	var dragGrabNormY = 0.0;
 	var isOpen = false;
-	var snapTween:FlxTween;
 	var activeZone:Zone = ClientTable;
 	public var onDroppedOnPrinter:DeskDocument->Bool;
+	public var onDroppedOnShredder:DeskDocument->Bool;
 	public static var onDrawLayerChanged:DeskDocument->Void;
+	public static var onCanStartDrag:DeskDocument->FlxPoint->Bool;
 
 	var useAlphaHitTest = false;
 	var alphaThreshold = 20;
@@ -39,6 +44,18 @@ class DeskDocument extends FlxSprite
 	var clientAngle = -12.0;
 	var computerAngle = -12.0;
 	var noneAngle = -14.0;
+
+	public function setZoneAngles(clientTable:Float, employerTable:Float, window:Float, client:Float, computer:Float, none:Float):Void
+	{
+		clientTableAngle = clientTable;
+		employerTableAngle = employerTable;
+		windowAngle = window;
+		clientAngle = client;
+		computerAngle = computer;
+		noneAngle = none;
+		if (!isOpen)
+			angle = getAngleForZone(activeZone);
+	}
 
 	public function new(zones:LayoutZones, layer:FlxGroup, closedPath:String, openPath:String, openSizeMultiplier:Float = 9.0, placeOnTable:Bool = true)
 	{
@@ -67,7 +84,7 @@ class DeskDocument extends FlxSprite
 	{
 		super.update(elapsed);
 
-		if (scanLocked)
+		if (scanLocked || shredLocked)
 			return;
 
 		if (snapping)
@@ -88,7 +105,8 @@ class DeskDocument extends FlxSprite
 		if (!MonitorOverlay.blocksWorldInput()
 			&& FlxG.mouse.justPressed
 			&& hitsPoint(mouse)
-			&& isFrontmostAtPoint(mouse))
+			&& isFrontmostAtPoint(mouse)
+			&& (onCanStartDrag == null || onCanStartDrag(this, mouse)))
 		{
 			bringToFront();
 			startDrag(mouse.x, mouse.y);
@@ -137,9 +155,36 @@ class DeskDocument extends FlxSprite
 		return closedPath;
 	}
 
+	public function getOpenGraphicPath():String
+	{
+		return openPath;
+	}
+
+	public function getOpenDisplayTargetWidth():Float
+	{
+		return closedDisplayWidth * openSizeMultiplier;
+	}
+
+	public function getOpenDisplayTargetHeight(bitmapWidth:Int, bitmapHeight:Int):Float
+	{
+		if (bitmapWidth <= 0)
+			return 0;
+		return bitmapHeight * getOpenDisplayTargetWidth() / bitmapWidth;
+	}
+
+	public function setCustomOpenGraphic(bmp:BitmapData):Void
+	{
+		customOpenGraphic = bmp;
+	}
+
 	public function isDragging():Bool
 	{
 		return dragging;
+	}
+
+	public function isCurrentlyOpen():Bool
+	{
+		return isOpen;
 	}
 
 	public function setInteractionLayer(newLayer:FlxGroup):Void
@@ -175,6 +220,26 @@ class DeskDocument extends FlxSprite
 		snapToDesk(x, y);
 	}
 
+	public function lockForShredder():Void
+	{
+		if (snapTween != null)
+		{
+			snapTween.cancel();
+			snapTween = null;
+		}
+		FlxTween.cancelTweensOf(this);
+		dragging = false;
+		snapping = false;
+		shredLocked = true;
+		clearEmployerClip();
+		setClosed();
+	}
+
+	public function isShredLocked():Bool
+	{
+		return shredLocked;
+	}
+
 	public function prepareClientHandoff():Void
 	{
 		if (snapTween != null)
@@ -197,7 +262,13 @@ class DeskDocument extends FlxSprite
 	{
 	}
 
-	function startDrag(mouseX:Float, mouseY:Float):Void
+	public function startDragFromExternal(mouseX:Float, mouseY:Float, ?centerGrab:Bool = false):Void
+	{
+		bringToFront();
+		startDrag(mouseX, mouseY, centerGrab);
+	}
+
+	function startDrag(mouseX:Float, mouseY:Float, ?centerGrab:Bool = false):Void
 	{
 		if (snapTween != null)
 		{
@@ -207,8 +278,17 @@ class DeskDocument extends FlxSprite
 
 		dragging = true;
 		snapping = false;
-		dragGrabNormX = (mouseX - x) / width;
-		dragGrabNormY = (mouseY - y) / height;
+		if (centerGrab)
+		{
+			dragGrabNormX = 0.5;
+			dragGrabNormY = 0.5;
+			setPosition(mouseX - width * 0.5, mouseY - height * 0.5);
+		}
+		else
+		{
+			dragGrabNormX = (mouseX - x) / width;
+			dragGrabNormY = (mouseY - y) / height;
+		}
 		updateStateFromPosition();
 	}
 
@@ -227,7 +307,15 @@ class DeskDocument extends FlxSprite
 				snapToDesk(x, y);
 			return;
 		}
-		if (cursorInCalculator(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y))
+		if (cursorInShredder(mouse.x, mouse.y))
+		{
+			setClosed();
+			var shredAccepted = onDroppedOnShredder != null && onDroppedOnShredder(this);
+			if (!shredAccepted)
+				snapToDesk(x, y);
+			return;
+		}
+		if (cursorInCalculator(mouse.x, mouse.y))
 		{
 			setClosed();
 			snapToDesk(x, y);
@@ -469,7 +557,7 @@ class DeskDocument extends FlxSprite
 
 		if (visR <= visL || visB <= visT)
 		{
-			visible = false;
+			clearEmployerClip();
 			return;
 		}
 
@@ -485,6 +573,114 @@ class DeskDocument extends FlxSprite
 	{
 		clipRect = null;
 		visible = true;
+	}
+
+	public function syncOverlayClip(overlay:FlxSprite):Void
+	{
+		if (!visible)
+		{
+			overlay.clipRect = null;
+			return;
+		}
+
+		if (clipRect != null)
+		{
+			var ex = zones.employerX;
+			var ey = zones.employerTableY;
+			var er = ex + zones.employerW;
+			var eb = ey + zones.employerTableH;
+			applyWorldClipRect(overlay, Math.max(x, ex), Math.max(y, ey), Math.min(x + width, er), Math.min(y + height, eb));
+			return;
+		}
+
+		var visL:Float = 0;
+		var visT:Float = 0;
+		var visR:Float = 0;
+		var visB:Float = 0;
+		var hasClip = false;
+
+		switch (activeZone)
+		{
+			case ClientTable:
+				if (overlapsComputer())
+				{
+					visL = 0;
+					visT = zones.clientTableY;
+					visR = zones.leftW;
+					visB = zones.clientTableY + zones.clientTableH;
+					hasClip = true;
+				}
+			case Client:
+				if (overlapsClientTable())
+				{
+					visL = 0;
+					visT = 0;
+					visR = zones.leftW;
+					visB = zones.clientH;
+					hasClip = true;
+				}
+			case Computer:
+				if (overlapsClientTable())
+				{
+					visL = 0;
+					visT = zones.computerY;
+					visR = zones.leftW;
+					visB = zones.computerY + zones.computerH;
+					hasClip = true;
+				}
+			default:
+		}
+
+		if (!hasClip)
+		{
+			overlay.clipRect = null;
+			return;
+		}
+
+		applyWorldClipRect(overlay, visL, visT, visR, visB);
+	}
+
+	function overlapsClientTable():Bool
+	{
+		var ty = zones.clientTableY;
+		var tr = zones.leftW;
+		var tb = ty + zones.clientTableH;
+		return x < tr && x + width > 0 && y < tb && y + height > ty;
+	}
+
+	function overlapsComputer():Bool
+	{
+		var cy = zones.computerY;
+		var cr = zones.leftW;
+		var cb = cy + zones.computerH;
+		return x < cr && x + width > 0 && y < cb && y + height > cy;
+	}
+
+	public function applyWorldClipRect(sprite:FlxSprite, visL:Float, visT:Float, visR:Float, visB:Float):Void
+	{
+		var sx = Math.abs(sprite.scale.x);
+		var sy = Math.abs(sprite.scale.y);
+		if (sx <= 0 || sy <= 0)
+			return;
+
+		var sL = sprite.x;
+		var sT = sprite.y;
+		var sR = sprite.x + sprite.width;
+		var sB = sprite.y + sprite.height;
+		var clipL = Math.max(visL, sL);
+		var clipT = Math.max(visT, sT);
+		var clipR = Math.min(visR, sR);
+		var clipB = Math.min(visB, sB);
+
+		if (clipR <= clipL || clipB <= clipT)
+		{
+			sprite.clipRect = null;
+			return;
+		}
+
+		if (sprite.clipRect == null)
+			sprite.clipRect = FlxRect.get();
+		sprite.clipRect.set((clipL - sprite.x) / sx, (clipT - sprite.y) / sy, (clipR - clipL) / sx, (clipB - clipT) / sy);
 	}
 
 	function storeAngleForZone(zone:Zone):Void
@@ -507,8 +703,15 @@ class DeskDocument extends FlxSprite
 		}
 	}
 
+	function usesZoneAngleWhenClosed():Bool
+	{
+		return true;
+	}
+
 	function getAngleForZone(zone:Zone):Float
 	{
+		if (!isOpen && !usesZoneAngleWhenClosed())
+			return 0;
 		return switch (zone)
 		{
 			case ClientTable: clientTableAngle;
@@ -546,7 +749,7 @@ class DeskDocument extends FlxSprite
 		activeZone = ClientTable;
 		var target = findClosestDeskSnap(fromX, fromY);
 		snapping = true;
-		snapTween = FlxTween.tween(this, {x: target.x, y: target.y, angle: clientTableAngle}, SNAP_DURATION, {
+		snapTween = FlxTween.tween(this, {x: target.x, y: target.y, angle: getAngleForZone(ClientTable)}, SNAP_DURATION, {
 			ease: FlxEase.quadOut,
 			onComplete: function(_)
 			{
@@ -692,7 +895,7 @@ class DeskDocument extends FlxSprite
 		var targetY = zones.clientTableY + Math.max(margin, CLIENT_TABLE_PAD_TOP);
 
 		snapping = true;
-		snapTween = FlxTween.tween(this, {x: targetX, y: targetY, angle: clientTableAngle}, SNAP_DURATION, {
+		snapTween = FlxTween.tween(this, {x: targetX, y: targetY, angle: getAngleForZone(ClientTable)}, SNAP_DURATION, {
 			ease: FlxEase.quadOut,
 			onComplete: function(_)
 			{
@@ -709,7 +912,7 @@ class DeskDocument extends FlxSprite
 		var target = findClosestEmployerTableSnap(x + width * 0.5, y + height * 0.5);
 		clampSnapTargetToEmployerTable(target);
 		snapping = true;
-		snapTween = FlxTween.tween(this, {x: target.x, y: target.y, angle: employerTableAngle}, SNAP_DURATION, {
+		snapTween = FlxTween.tween(this, {x: target.x, y: target.y, angle: getAngleForZone(EmployerTable)}, SNAP_DURATION, {
 			ease: FlxEase.quadOut,
 			onComplete: function(_)
 			{
@@ -785,10 +988,14 @@ class DeskDocument extends FlxSprite
 		if (isOpen)
 			return;
 
+		clearEmployerClip();
 		var cx = x + width * 0.5;
 		var cy = y + height * 0.5;
 		isOpen = true;
-		loadGraphic(openPath);
+		if (customOpenGraphic != null)
+			loadGraphic(customOpenGraphic.clone());
+		else
+			loadGraphic(openPath);
 		applyDisplaySize();
 		angle = 0;
 		placeAfterResize(cx, cy);
