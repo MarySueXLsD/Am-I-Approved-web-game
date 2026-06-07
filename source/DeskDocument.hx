@@ -32,8 +32,28 @@ class DeskDocument extends FlxSprite
 	var activeZone:Zone = ClientTable;
 	public var onDroppedOnPrinter:DeskDocument->Bool;
 	public var onDroppedOnShredder:DeskDocument->Bool;
+	public static var resolveClientTableLayoutTarget:DeskDocument->{x:Float, y:Float};
 	public static var onDrawLayerChanged:DeskDocument->Void;
+	public static var onUpdateDragPresentation:DeskDocument->Void;
+	public static var isOpenFolderStackUnderDragHover:Void->Bool;
+	public static var onLensCamerasSync:DeskDocument->Void;
+	public static var onDeskPropsLensSync:Void->Void;
+	public static var lensSyncGroups:Array<FlxGroup>;
 	public static var onCanStartDrag:DeskDocument->FlxPoint->Bool;
+	public static var isTopmostAtPoint:DeskDocument->FlxPoint->Bool;
+	public static var frontmostDocumentAtPoint:FlxPoint->DeskDocument;
+	public static var magnifierHitsPoint:FlxPoint->Bool;
+	public static var isOverDeskPropsAtPoint:FlxPoint->Bool;
+	public static var isAboveDrawLayerBlockingPoint:FlxPoint->Bool;
+	public static var currentDrag:DeskDocument = null;
+
+	public var loanFolderStorage:LoanFolderDocument = null;
+	public var loanFolderPullHost:LoanFolderDocument = null;
+	var compactDragPreviewActive = false;
+	var compactDragPreviewWasOpen = false;
+	var compactDragPreviewScaleX = 1.0;
+	var compactDragPreviewScaleY = 1.0;
+	var compactDragPreviewAngle = 0.0;
 
 	var useAlphaHitTest = false;
 	var alphaThreshold = 20;
@@ -84,26 +104,66 @@ class DeskDocument extends FlxSprite
 	{
 		super.update(elapsed);
 
+		if (loanFolderStorage != null)
+			return;
+
 		if (scanLocked || shredLocked)
 			return;
 
 		if (snapping)
 			return;
 
+		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
+			|| ShiftPauseOverlay.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+		{
+			if (dragging)
+				finishDrag();
+			return;
+		}
+
 		var mouse = FlxG.mouse.getViewPosition();
+
+		if (ScanModeOverlay.blocksDocumentInteraction(this, mouse))
+		{
+			if (dragging)
+				finishDrag();
+			return;
+		}
 
 		if (dragging)
 		{
+			var pullHost = loanFolderPullHost;
+			if (pullHost != null)
+			{
+				if (pullHost.updatePullingDocument(this, mouse))
+				{
+					if (FlxG.mouse.justReleased)
+						finishDrag();
+					return;
+				}
+				loanFolderPullHost = null;
+				pullHost.onDocumentPulledOutside(this);
+			}
+
 			setPosition(mouse.x - width * dragGrabNormX, mouse.y - height * dragGrabNormY);
 			applyDragBounds();
+			if (onUpdateDragPresentation != null)
+				onUpdateDragPresentation(this);
 			updateStateFromPosition();
+			LoanFolderDocument.updateDragHover(this, mouse.x, mouse.y);
 			if (FlxG.mouse.justReleased)
 				finishDrag();
 			return;
 		}
 
-		if (!MonitorOverlay.blocksWorldInput()
-			&& FlxG.mouse.justPressed
+		if (ScanModeOverlay.isScanModeActive() && FlxG.mouse.justPressed)
+			return;
+
+		if (ScanModeOverlay.suppressDocumentPress && FlxG.mouse.justPressed)
+			return;
+
+		if (FlxG.mouse.justPressed
+			&& currentDrag == null
 			&& hitsPoint(mouse)
 			&& isFrontmostAtPoint(mouse)
 			&& (onCanStartDrag == null || onCanStartDrag(this, mouse)))
@@ -138,6 +198,8 @@ class DeskDocument extends FlxSprite
 
 	public function hitsPoint(point:FlxPoint):Bool
 	{
+		if (loanFolderStorage != null)
+			return false;
 		if (!overlapsPoint(point))
 			return false;
 		if (!useAlphaHitTest)
@@ -145,14 +207,71 @@ class DeskDocument extends FlxSprite
 		return pixelsOverlapPoint(point, alphaThreshold);
 	}
 
+	public function resolveScanBoundsAt(point:FlxPoint):Null<ScanBounds>
+	{
+		if (!visible || !hitsPoint(point))
+			return null;
+
+		return {
+			x: x,
+			y: y,
+			w: width,
+			h: height
+		};
+	}
+
 	public function isOpenOnEmployerTable():Bool
 	{
+		if (activeZone == ClientTable)
+			return false;
 		return isOpen && (activeZone == EmployerTable || overlapsEmployerTable());
+	}
+
+	public function hasEmployerClipReady():Bool
+	{
+		return clipRect != null && clipRect.width > 0 && clipRect.height > 0;
+	}
+
+	public static function blocksOverlayUpdates():Bool
+	{
+		return MonitorOverlay.blocksWorldInput()
+			|| BeginningDayOverlay.blocksWorldInput()
+			|| MainMenuOverlay.blocksWorldInput();
+	}
+
+	public function refreshEmployerTableClip():Void
+	{
+		if (isOpen && (activeZone == EmployerTable || overlapsEmployerTable()))
+			updateEmployerTableClip();
+	}
+
+	function shouldOpenOnEmployerDrop():Bool
+	{
+		var mouse = FlxG.mouse.getViewPosition();
+		var norm = normalizeZoneCoords(mouse.x, mouse.y);
+		return cursorInEmployerTable(norm.x, norm.y);
+	}
+
+	function prefersFreeDropPlacement():Bool
+	{
+		return false;
+	}
+
+	function shouldSnapToEmployerTableOpenOnDrop():Bool
+	{
+		return false;
 	}
 
 	public function getClosedGraphicPath():String
 	{
 		return closedPath;
+	}
+
+	public function getClosedDisplayScale():Float
+	{
+		if (frameWidth <= 0)
+			return 1.0;
+		return closedDisplayWidth / frameWidth;
 	}
 
 	public function getOpenGraphicPath():String
@@ -182,9 +301,222 @@ class DeskDocument extends FlxSprite
 		return dragging;
 	}
 
+	public function isStoredInLoanFolder():Bool
+	{
+		return loanFolderStorage != null;
+	}
+
+	public function setLoanFolderStorage(folder:Null<LoanFolderDocument>):Void
+	{
+		var leavingFolder = loanFolderStorage != null && folder == null;
+		loanFolderStorage = folder;
+		if (leavingFolder)
+			restoreAfterLoanFolderStorage();
+	}
+
+	function restoreAfterLoanFolderStorage():Void
+	{
+		refreshDisplaySize();
+	}
+
+	public function getLoanFolderPullHost():LoanFolderDocument
+	{
+		return loanFolderPullHost;
+	}
+
+	public function setLoanFolderPullHost(folder:Null<LoanFolderDocument>):Void
+	{
+		loanFolderPullHost = folder;
+	}
+
+	public function setActiveZone(zone:Zone):Void
+	{
+		activeZone = zone;
+	}
+
+	public function cancelDragState():Void
+	{
+		if (snapTween != null)
+		{
+			snapTween.cancel();
+			snapTween = null;
+		}
+		FlxTween.cancelTweensOf(this);
+		dragging = false;
+		snapping = false;
+	}
+
+	public function bringToFrontInLayer():Void
+	{
+		bringToFront();
+	}
+
+	public function snapToMouseWhileDragging(mouseX:Float, mouseY:Float):Void
+	{
+		if (!dragging)
+			return;
+		setPosition(mouseX - width * dragGrabNormX, mouseY - height * dragGrabNormY);
+	}
+
+	public function recenterDragOnMouse(mouseX:Float, mouseY:Float):Void
+	{
+		dragGrabNormX = 0.5;
+		dragGrabNormY = 0.5;
+		if (dragging)
+			setPosition(mouseX - width * 0.5, mouseY - height * 0.5);
+	}
+
+	public function refreshDisplaySize():Void
+	{
+		applyDisplaySize();
+	}
+
+	public function applyStoredDisplayWidth(targetWidth:Float):Void
+	{
+		if (isOpen)
+			setClosed();
+		if (frameWidth <= 0)
+			return;
+		var s = targetWidth / frameWidth;
+		scale.set(s, s);
+		updateHitbox();
+		angle = 0;
+	}
+
+	public function isCompactDragPreviewActive():Bool
+	{
+		return compactDragPreviewActive;
+	}
+
+	public function isSnappingToTable():Bool
+	{
+		return snapping;
+	}
+
+	public function beginFolderHoverPreview():Void
+	{
+		beginCompactDragPreview();
+	}
+
+	public function endFolderHoverPreview():Void
+	{
+		endCompactDragPreview();
+	}
+
+	public function beginCompactDragPreview():Void
+	{
+		if (compactDragPreviewActive)
+			return;
+
+		compactDragPreviewActive = true;
+		compactDragPreviewWasOpen = isOpen;
+		compactDragPreviewScaleX = scale.x;
+		compactDragPreviewScaleY = scale.y;
+		compactDragPreviewAngle = angle;
+
+		if (isOpen)
+			setClosed();
+		else
+		{
+			var paper = Std.downcast(this, PrinterPaperDocument);
+			if (paper != null)
+				paper.ensureSmallClosedGraphic();
+		}
+		applyDisplaySize();
+
+		var paper = Std.downcast(this, PrinterPaperDocument);
+		if (paper != null)
+			angle = PrinterPaperDocument.CLOSED_ANGLE;
+		else
+			syncClosedDragAngle();
+
+		notifyDrawLayerChanged();
+	}
+
+	public function discardCompactDragPreview():Void
+	{
+		compactDragPreviewActive = false;
+	}
+
+	public function endCompactDragPreview():Void
+	{
+		if (!compactDragPreviewActive)
+			return;
+		compactDragPreviewActive = false;
+		if (compactDragPreviewWasOpen)
+			setOpen();
+		else
+			setClosed();
+		scale.set(compactDragPreviewScaleX, compactDragPreviewScaleY);
+		angle = compactDragPreviewAngle;
+		updateHitbox();
+		notifyDrawLayerChanged();
+	}
+
+	public function isOnClientOrEmployerTable():Bool
+	{
+		return activeZone == ClientTable || activeZone == EmployerTable;
+	}
+
+	public function isOnClientTable():Bool
+	{
+		return activeZone == ClientTable;
+	}
+
+	public function belongsInClientTableRow():Bool
+	{
+		if (isStoredInLoanFolder())
+			return false;
+		if (isOpenOnEmployerTable())
+			return false;
+		return isOnClientTable();
+	}
+
+	public function isOnClientWindow():Bool
+	{
+		return activeZone == Client;
+	}
+
+	public function isOnComputerWindow():Bool
+	{
+		return activeZone == Computer;
+	}
+
+	public function isOnLeftColumnAboveLens():Bool
+	{
+		return isOnClientTable() || isOnClientWindow() || isOnComputerWindow();
+	}
+
 	public function isCurrentlyOpen():Bool
 	{
 		return isOpen;
+	}
+
+	public static function shouldUseLensMagnifier(doc:DeskDocument, layerIndex:Int, magnifierIndex:Int):Bool
+	{
+		if (layerIndex < 0 || magnifierIndex < 0 || layerIndex >= magnifierIndex)
+			return false;
+
+		var folder = Std.downcast(doc, LoanFolderDocument);
+		if (folder != null)
+			return folder.isOpenOnEmployerTable();
+
+		if (doc.loanFolderStorage != null)
+			return doc.loanFolderStorage.isOpenOnEmployerTable();
+
+		return doc.isCurrentlyOpen();
+	}
+
+	public static function usesMagnifierCoverLayer(doc:DeskDocument):Bool
+	{
+		var folder = Std.downcast(doc, LoanFolderDocument);
+		if (folder != null)
+			return folder.isOpenOnEmployerTable();
+
+		if (doc.loanFolderStorage != null)
+			return doc.loanFolderStorage.isOpenOnEmployerTable();
+
+		return doc.isCurrentlyOpen();
 	}
 
 	public function setInteractionLayer(newLayer:FlxGroup):Void
@@ -212,12 +544,15 @@ class DeskDocument extends FlxSprite
 
 	public function unlockAfterPrinterScan():Void
 	{
+		if (!scanLocked)
+			return;
+
 		scanLocked = false;
 		visible = true;
 		onScanLockChanged(false);
 		activeZone = ClientTable;
 		setClosed();
-		snapToDesk(x, y);
+		placeOnClientTableAtDropPosition();
 	}
 
 	public function lockForShredder():Void
@@ -240,6 +575,22 @@ class DeskDocument extends FlxSprite
 		return shredLocked;
 	}
 
+	public function finishShredder():Void
+	{
+		destroy();
+	}
+
+	public function rejectsPrinterAndShredder():Bool
+	{
+		return false;
+	}
+
+	public function hideFromDesk():Void
+	{
+		visible = false;
+		activeZone = None;
+	}
+
 	public function prepareClientHandoff():Void
 	{
 		if (snapTween != null)
@@ -255,6 +606,7 @@ class DeskDocument extends FlxSprite
 		setClosed();
 		activeZone = ClientTable;
 		visible = true;
+		refreshDisplaySize();
 		onScanLockChanged(false);
 	}
 
@@ -270,14 +622,20 @@ class DeskDocument extends FlxSprite
 
 	function startDrag(mouseX:Float, mouseY:Float, ?centerGrab:Bool = false):Void
 	{
+		if (currentDrag != null && currentDrag != this)
+			return;
+
 		if (snapTween != null)
 		{
 			snapTween.cancel();
 			snapTween = null;
 		}
 
+		currentDrag = this;
 		dragging = true;
 		snapping = false;
+		if (onUpdateDragPresentation != null)
+			onUpdateDragPresentation(this);
 		if (centerGrab)
 		{
 			dragGrabNormX = 0.5;
@@ -292,56 +650,94 @@ class DeskDocument extends FlxSprite
 		updateStateFromPosition();
 	}
 
+	public function cancelDrag():Void
+	{
+		if (dragging)
+			finishDrag();
+	}
+
 	function finishDrag():Void
 	{
 		dragging = false;
+		if (currentDrag == this)
+			currentDrag = null;
 		clearEmployerClip();
 		storeAngleForZone(activeZone);
-
 		var mouse = FlxG.mouse.getViewPosition();
-		if (cursorInPrinter(mouse.x, mouse.y))
+		var droppedOnDeskProp = isOverDeskPropsAtPoint != null && isOverDeskPropsAtPoint(mouse);
+		finishDragResolve();
+		if (isStoredInLoanFolder())
+			discardCompactDragPreview();
+		else if (!snapping && compactDragPreviewActive)
+		{
+			// Drop resolved closed (e.g. client table) — keep closed; do not restore open preview scale.
+			if (!isOpen)
+				discardCompactDragPreview();
+			else
+				endCompactDragPreview();
+		}
+		LoanFolderDocument.clearDragHover(this);
+		notifyDrawLayerChanged();
+	}
+
+	function finishDragResolve():Bool
+	{
+		var mouse = FlxG.mouse.getViewPosition();
+		var pullHost = loanFolderPullHost;
+		if (pullHost != null)
+		{
+			loanFolderPullHost = null;
+			if (pullHost.finishPullDrag(this, mouse.x, mouse.y))
+				return true;
+			pullHost.onDocumentPulledOutside(this);
+		}
+
+		if (LoanFolderDocument.tryStoreDragged(this, mouse.x, mouse.y))
+			return true;
+
+		if (LoanFolderDocument.shouldSnapToClientTableOnDrop(this, mouse.x, mouse.y))
 		{
 			setClosed();
-			var accepted = onDroppedOnPrinter != null && onDroppedOnPrinter(this);
+			placeOnClientTableAtDropPosition();
+			return false;
+		}
+
+		if (!rejectsPrinterAndShredder() && (cursorInPrinter(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y)))
+		{
+			var accepted = false;
+			if (cursorInPrinter(mouse.x, mouse.y))
+				accepted = onDroppedOnPrinter != null && onDroppedOnPrinter(this);
+			else
+				accepted = onDroppedOnShredder != null && onDroppedOnShredder(this);
 			if (!accepted)
-				snapToDesk(x, y);
-			return;
-		}
-		if (cursorInShredder(mouse.x, mouse.y))
-		{
-			setClosed();
-			var shredAccepted = onDroppedOnShredder != null && onDroppedOnShredder(this);
-			if (!shredAccepted)
-				snapToDesk(x, y);
-			return;
-		}
-		if (cursorInCalculator(mouse.x, mouse.y))
-		{
-			setClosed();
-			snapToDesk(x, y);
-			return;
-		}
-		var cursorZone = getZoneAt(mouse.x, mouse.y);
-
-		// Cursor is on employer table: open on employer table.
-		if (cursorZone == EmployerTable)
-		{
-			if (isOpen || overlapsEmployerTable())
-			{
-				activeZone = EmployerTable;
-				if (!isOpen)
-					setOpen();
-				updateEmployerTableClip();
-				return;
-			}
-			snapToClosestEmployerTableOpen();
-			return;
+				rejectToClientTable();
+			else
+				discardCompactDragPreview();
+			return false;
 		}
 
-		// Cursor is NOT on employer table: always treat as closed, use cursor zone.
-		var dropZone = cursorZone != None ? cursorZone : getDocumentZone();
+		if (shouldRejectDeskPropDrop(mouse.x, mouse.y))
+		{
+			rejectToClientTable();
+			return false;
+		}
+
+		if (rejectsPrinterAndShredder() && (cursorInPrinter(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y)))
+		{
+			rejectToClientTable();
+			return false;
+		}
+
+		var dropZone = getDropZoneOnRelease();
 		if (dropZone == None)
 			dropZone = activeZone;
+
+		if (dropZone == EmployerTable)
+		{
+			resolveEmployerTableDrop();
+			return false;
+		}
+
 		updateZoneFromCenter(dropZone);
 
 		setClosed();
@@ -349,24 +745,32 @@ class DeskDocument extends FlxSprite
 		switch (dropZone)
 		{
 			case ClientTable:
-				clampToClientTable();
-				nudgeFromClientTableEdges();
+				placeOnClientTableAtDropPosition();
 			case Computer:
-				snapToDesk(x, y);
+				if (prefersFreeDropPlacement())
+					clampToComputer();
+				else
+					snapToDesk(x, y);
 			case Client:
-				snapToDesk(x, y);
+				if (prefersFreeDropPlacement())
+					clampToClient();
+				else
+					snapToDesk(x, y);
 			case Window:
 				snapToClientTableTopRight();
 			case EmployerTable:
-				snapToDesk(x, y);
 			case None:
 				snapToDesk(x, y);
 			default:
 		}
+		return false;
 	}
 
 	function updateStateFromPosition():Void
 	{
+		if (compactDragPreviewActive)
+			return;
+
 		var zone = dragging ? getZoneAtCursor() : getDocumentZone();
 		updateZoneFromCenter(zone);
 
@@ -377,9 +781,35 @@ class DeskDocument extends FlxSprite
 		}
 		else
 		{
-			setClosed();
-			clearEmployerClip();
+			if (isOpen)
+				setClosed();
+			else
+				clearEmployerClip();
 		}
+
+		if (dragging && !isOpen && !compactDragPreviewActive)
+			syncClosedDragAngle();
+	}
+
+	public function syncClosedDragAngle():Void
+	{
+		if (!usesZoneAngleWhenClosed())
+		{
+			angle = 0;
+			return;
+		}
+
+		var mouse = FlxG.mouse.getViewPosition();
+		if (cursorInPrinter(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y) || cursorInCalculator(mouse.x, mouse.y))
+		{
+			angle = getAngleForZone(ClientTable);
+			return;
+		}
+
+		var zone = dragging ? getZoneAtCursor() : activeZone;
+		if (zone == None)
+			zone = activeZone;
+		angle = getAngleForZone(zone);
 	}
 
 	function updateZoneFromCenter(zone:Zone):Void
@@ -399,19 +829,33 @@ class DeskDocument extends FlxSprite
 	{
 		if (dragging)
 		{
+			if (compactDragPreviewActive)
+				return false;
+
 			var mouse = FlxG.mouse.getViewPosition();
+			if (LoanFolderDocument.blocksOpenWhileDraggingOver(mouse.x, mouse.y)
+				&& Std.downcast(this, MagnifyingGlass) == null
+				&& Std.downcast(this, LoanFolderDocument) == null)
+				return false;
 			if (cursorInPrinter(mouse.x, mouse.y))
 				return false;
 			if (cursorInCalculator(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y))
 				return false;
+			if (rejectsPrinterAndShredder() && (cursorInPrinter(mouse.x, mouse.y) || cursorInShredder(mouse.x, mouse.y)))
+				return false;
+			if (getDocumentZone() == ClientTable)
+				return false;
 			return cursorInEmployerTable(mouse.x, mouse.y);
 		}
+		if (isOpen)
+			return overlapsEmployerTable();
 		return activeZone == EmployerTable;
 	}
 
 	function cursorInEmployerTable(cx:Float, cy:Float):Bool
 	{
-		return inRect(cx, cy, zones.employerX, zones.employerTableY, zones.employerW, zones.employerTableH);
+		var norm = normalizeZoneCoords(cx, cy);
+		return inRect(norm.x, norm.y, zones.employerX, zones.employerTableY, zones.employerW, zones.employerTableH);
 	}
 
 	function cursorInPrinter(cx:Float, cy:Float):Bool
@@ -438,6 +882,24 @@ class DeskDocument extends FlxSprite
 		return x < pr && x + width > px && y < pb && y + height > py;
 	}
 
+	function overlapsShredder():Bool
+	{
+		var sx = zones.shredderX;
+		var sy = zones.shredderY;
+		var sr = sx + zones.shredderW;
+		var sb = sy + zones.shredderH;
+		return x < sr && x + width > sx && y < sb && y + height > sy;
+	}
+
+	function isDropOnPrinterOrShredder(mouseX:Float, mouseY:Float):Bool
+	{
+		if (cursorInPrinter(mouseX, mouseY) || cursorInShredder(mouseX, mouseY))
+			return true;
+		if (rejectsPrinterAndShredder() && (overlapsPrinter() || overlapsShredder()))
+			return true;
+		return false;
+	}
+
 	function centerInPrinter():Bool
 	{
 		var cx = x + width * 0.5;
@@ -461,15 +923,67 @@ class DeskDocument extends FlxSprite
 	function getDropZoneOnRelease():Zone
 	{
 		var mouse = FlxG.mouse.getViewPosition();
-		var zone = getZoneAt(mouse.x, mouse.y);
-		if (zone != None)
-			return zone;
+		var mouseZone = getZoneAt(mouse.x, mouse.y);
+		var docZone = getDocumentZone();
+
+		// Large docs can cover the client table while the cursor stays in the employer column.
+		if (mouseZone == ClientTable || docZone == ClientTable)
+			return ClientTable;
+
+		if (mouseZone != None)
+			return mouseZone;
 
 		if (overlapsWindow())
 			return Window;
 
-		zone = getDocumentZone();
-		return zone != None ? zone : activeZone;
+		return docZone != None ? docZone : activeZone;
+	}
+
+	function cursorOnDeskProp(mouseX:Float, mouseY:Float):Bool
+	{
+		if (cursorInCalculator(mouseX, mouseY) || cursorInPrinter(mouseX, mouseY) || cursorInShredder(mouseX, mouseY))
+			return true;
+		if (isOverDeskPropsAtPoint == null)
+			return false;
+		var p = FlxPoint.get(mouseX, mouseY);
+		var hit = isOverDeskPropsAtPoint(p);
+		p.put();
+		return hit;
+	}
+
+	function shouldRejectDeskPropDrop(mouseX:Float, mouseY:Float):Bool
+	{
+		if (!cursorOnDeskProp(mouseX, mouseY))
+			return false;
+		if (getZoneAt(mouseX, mouseY) == ClientTable)
+			return false;
+		if (isOpen && overlapsEmployerTable())
+			return false;
+		if (rejectsPrinterAndShredder())
+			return true;
+		if (compactDragPreviewActive)
+			return true;
+		return !isOpen;
+	}
+
+	function resolveEmployerTableDrop():Void
+	{
+		activeZone = EmployerTable;
+		if (compactDragPreviewActive)
+			endCompactDragPreview();
+		if (shouldOpenOnEmployerDrop())
+		{
+			if (!isOpen)
+				setOpen();
+			updateEmployerTableClip();
+			return;
+		}
+		if (shouldSnapToEmployerTableOpenOnDrop())
+		{
+			snapToClosestEmployerTableOpen();
+			return;
+		}
+		setClosed();
 	}
 
 	function overlapsWindow():Bool
@@ -495,14 +1009,15 @@ class DeskDocument extends FlxSprite
 		if (dragging)
 			return;
 
+		if (activeZone == EmployerTable || overlapsEmployerTable())
+			return;
+
 		switch (getDocumentZone())
 		{
 			case ClientTable:
 				clampToClientTable();
 			case Window:
 				clampToWindow();
-			case EmployerTable:
-				clampToEmployerTable();
 			case Client:
 				clampToClient();
 			case Computer:
@@ -528,9 +1043,9 @@ class DeskDocument extends FlxSprite
 			case Window:
 				clampToWindow();
 			case EmployerTable:
-				clampToEmployerTable();
 			case Client:
-				clampToClient();
+				if (zone == Client)
+					clampToClient();
 			case Computer:
 				clampToComputer();
 			default:
@@ -557,11 +1072,20 @@ class DeskDocument extends FlxSprite
 
 		if (visR <= visL || visB <= visT)
 		{
+			if (isOpen && (activeZone == EmployerTable || overlapsEmployerTable()))
+			{
+				if (clipRect == null)
+					clipRect = FlxRect.get();
+				clipRect.set(0, 0, 0, 0);
+				return;
+			}
+
 			clearEmployerClip();
 			return;
 		}
 
-		visible = true;
+		if (!scanLocked && !shredLocked)
+			visible = true;
 		var sx = Math.abs(scale.x);
 		var sy = Math.abs(scale.y);
 		if (clipRect == null)
@@ -572,7 +1096,8 @@ class DeskDocument extends FlxSprite
 	function clearEmployerClip():Void
 	{
 		clipRect = null;
-		visible = true;
+		if (!scanLocked && !shredLocked)
+			visible = true;
 	}
 
 	public function syncOverlayClip(overlay:FlxSprite):Void
@@ -584,6 +1109,15 @@ class DeskDocument extends FlxSprite
 		}
 
 		if (clipRect != null)
+		{
+			var dsx = Math.abs(scale.x);
+			var dsy = Math.abs(scale.y);
+			applyWorldClipRect(overlay, x + clipRect.x * dsx, y + clipRect.y * dsy, x + (clipRect.x + clipRect.width) * dsx,
+				y + (clipRect.y + clipRect.height) * dsy);
+			return;
+		}
+
+		if (isOpen && (activeZone == EmployerTable || overlapsEmployerTable()))
 		{
 			var ex = zones.employerX;
 			var ey = zones.employerTableY;
@@ -674,7 +1208,9 @@ class DeskDocument extends FlxSprite
 
 		if (clipR <= clipL || clipB <= clipT)
 		{
-			sprite.clipRect = null;
+			if (sprite.clipRect == null)
+				sprite.clipRect = FlxRect.get();
+			sprite.clipRect.set(0, 0, 0, 0);
 			return;
 		}
 
@@ -726,6 +1262,10 @@ class DeskDocument extends FlxSprite
 
 	function getZoneAt(cx:Float, cy:Float):Zone
 	{
+		var norm = normalizeZoneCoords(cx, cy);
+		cx = norm.x;
+		cy = norm.y;
+
 		if (inRect(cx, cy, zones.employerX, zones.employerTableY, zones.employerW, zones.employerTableH))
 			return EmployerTable;
 		if (inRect(cx, cy, zones.employerX, 0, zones.employerW, zones.windowH))
@@ -739,9 +1279,38 @@ class DeskDocument extends FlxSprite
 		return None;
 	}
 
+	static inline var ZONE_EDGE_EPSILON = 0.5;
+
+	function normalizeZoneCoords(cx:Float, cy:Float):{x:Float, y:Float}
+	{
+		if (cy >= FlxG.height - ZONE_EDGE_EPSILON)
+			cy = FlxG.height - ZONE_EDGE_EPSILON;
+		if (cx >= FlxG.width - ZONE_EDGE_EPSILON)
+			cx = FlxG.width - ZONE_EDGE_EPSILON;
+		if (cy < 0)
+			cy = 0;
+		if (cx < 0)
+			cx = 0;
+		return {x: cx, y: cy};
+	}
+
 	function inRect(cx:Float, cy:Float, rx:Float, ry:Float, rw:Float, rh:Float):Bool
 	{
 		return cx >= rx && cx < rx + rw && cy >= ry && cy < ry + rh;
+	}
+
+	function rejectToClientTable():Void
+	{
+		discardCompactDragPreview();
+		setClosed();
+		refreshDisplaySize();
+		placeOnClientTableAtDropPosition(true);
+		notifyDrawLayerChanged();
+	}
+
+	function snapRejectedDropToClientTable():Void
+	{
+		rejectToClientTable();
 	}
 
 	function snapToDesk(fromX:Float, fromY:Float):Void
@@ -802,6 +1371,56 @@ class DeskDocument extends FlxSprite
 		angle = clientTableAngle;
 	}
 
+	function placeOnClientTableAtDropPosition(?animate:Bool = false):Void
+	{
+		activeZone = ClientTable;
+		var target = getClientTableDropTarget();
+		var targetAngle = getAngleForZone(ClientTable);
+
+		if (!animate)
+		{
+			x = target.x;
+			y = target.y;
+			angle = targetAngle;
+			return;
+		}
+
+		tweenToClientTablePosition(target.x, target.y, targetAngle);
+	}
+
+	function getClientTableDropTarget():{x:Float, y:Float}
+	{
+		var tx = FlxMath.bound(x, 0, zones.leftW - width);
+		var ty = FlxMath.bound(y, zones.clientTableY, zones.clientTableY + zones.clientTableH - height);
+		var minX = CLIENT_TABLE_PAD_LEFT;
+		var maxX = zones.leftW - width - CLIENT_TABLE_PAD_RIGHT;
+		var minY = zones.clientTableY + CLIENT_TABLE_PAD_TOP;
+		var maxY = zones.clientTableY + zones.clientTableH - height - CLIENT_TABLE_PAD_BOTTOM;
+		return {
+			x: FlxMath.bound(tx, minX, maxX),
+			y: FlxMath.bound(ty, minY, maxY)
+		};
+	}
+
+	function tweenToClientTablePosition(targetX:Float, targetY:Float, targetAngle:Float):Void
+	{
+		if (snapTween != null)
+		{
+			snapTween.cancel();
+			snapTween = null;
+		}
+
+		snapping = true;
+		snapTween = FlxTween.tween(this, {x: targetX, y: targetY, angle: targetAngle}, SNAP_DURATION, {
+			ease: FlxEase.quadOut,
+			onComplete: function(_)
+			{
+				snapping = false;
+				snapTween = null;
+			}
+		});
+	}
+
 	static inline var CLIENT_TABLE_PAD_LEFT:Float = 5;
 	static inline var CLIENT_TABLE_PAD_RIGHT:Float = 5;
 	static inline var CLIENT_TABLE_PAD_TOP:Float = 25;
@@ -811,31 +1430,6 @@ class DeskDocument extends FlxSprite
 	{
 		x = FlxMath.bound(x, 0, zones.leftW - width);
 		y = FlxMath.bound(y, zones.clientTableY, zones.clientTableY + zones.clientTableH - height);
-	}
-
-	function nudgeFromClientTableEdges():Void
-	{
-		var minX = CLIENT_TABLE_PAD_LEFT;
-		var maxX = zones.leftW - width - CLIENT_TABLE_PAD_RIGHT;
-		var minY = zones.clientTableY + CLIENT_TABLE_PAD_TOP;
-		var maxY = zones.clientTableY + zones.clientTableH - height - CLIENT_TABLE_PAD_BOTTOM;
-
-		var needsNudge = x < minX || x > maxX || y < minY || y > maxY;
-		if (!needsNudge)
-			return;
-
-		var nx = FlxMath.bound(x, minX, maxX);
-		var ny = FlxMath.bound(y, minY, maxY);
-
-		snapping = true;
-		snapTween = FlxTween.tween(this, {x: nx, y: ny}, SNAP_DURATION, {
-			ease: FlxEase.quadOut,
-			onComplete: function(_)
-			{
-				snapping = false;
-				snapTween = null;
-			}
-		});
 	}
 
 	function clampToClient():Void
@@ -970,7 +1564,10 @@ class DeskDocument extends FlxSprite
 	function setClosed():Void
 	{
 		if (!isOpen)
+		{
+			syncClosedDragAngle();
 			return;
+		}
 
 		clearEmployerClip();
 		var cx = x + width * 0.5;
@@ -999,6 +1596,11 @@ class DeskDocument extends FlxSprite
 		applyDisplaySize();
 		angle = 0;
 		placeAfterResize(cx, cy);
+		notifyDrawLayerChanged();
+	}
+
+	public function refreshDrawLayer():Void
+	{
 		notifyDrawLayerChanged();
 	}
 
@@ -1035,14 +1637,4 @@ class DeskDocument extends FlxSprite
 		scale.set(s, s);
 		updateHitbox();
 	}
-}
-
-enum Zone
-{
-	None;
-	Client;
-	ClientTable;
-	Computer;
-	Window;
-	EmployerTable;
 }

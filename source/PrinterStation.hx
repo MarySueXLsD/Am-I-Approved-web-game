@@ -27,6 +27,7 @@ class PrinterStation extends FlxGroup
 	static inline var PAPER_START_Y = 118.0;
 	static inline var PAPER_END_Y = -70.0;
 	static inline var PAPER_FEED_DURATION = 3.0;
+	static inline var DEFAULT_FEED_PAPER_PATH = "static/copy_paper_small.png";
 	static inline var SCANNER_LEFT = 278.0;
 	static inline var SCANNER_TOP = 201.0;
 	static inline var SCANNER_RIGHT = 710.0;
@@ -53,11 +54,13 @@ class PrinterStation extends FlxGroup
 	var isPrinting = false;
 	var printCompleted = false;
 	var lastScannedDoc:DeskDocument;
+	var terminalPrintJob:TerminalPrintJob = TerminalPrintJob.None;
 	var isPaused = false;
 	var blinkTimer = 0.0;
 	var texW:Float;
 	var texH:Float;
 	var basePaperWidth = 0.0;
+	var feedPaperPath = DEFAULT_FEED_PAPER_PATH;
 
 	public function new(x:Float, tableY:Float, tableH:Float, targetHeight:Float, employerX:Float, employerY:Float, employerW:Float, employerH:Float, clientTableX:Float,
 			clientTableY:Float, clientTableW:Float, clientTableH:Float)
@@ -83,7 +86,7 @@ class PrinterStation extends FlxGroup
 		greenBorder = makeLedBorderSprite();
 		greenLed = makeLedFillSprite(GREEN_ON);
 		paper = new FlxSprite();
-		paper.loadGraphic("static/copy_paper_small.png");
+		paper.loadGraphic(feedPaperPath);
 
 		add(body);
 		add(paper);
@@ -121,8 +124,23 @@ class PrinterStation extends FlxGroup
 			scanLine.cameras = cams;
 	}
 
+	public function setFeedPaperGraphic(path:String):Void
+	{
+		feedPaperPath = path != null && path != "" ? path : DEFAULT_FEED_PAPER_PATH;
+		paper.loadGraphic(feedPaperPath);
+		syncPaperPosition();
+	}
+
+	public function resetFeedPaperGraphic():Void
+	{
+		setFeedPaperGraphic(DEFAULT_FEED_PAPER_PATH);
+	}
+
 	public function animatePaperFeed():Void
 	{
+		if (paper.graphic == null || paper.graphic.key != feedPaperPath)
+			paper.loadGraphic(feedPaperPath);
+
 		var s = body.scale.x;
 		isPrinting = true;
 		printCompleted = false;
@@ -159,6 +177,7 @@ class PrinterStation extends FlxGroup
 		printCompleted = false;
 		paper.clipRect = null;
 		paper.visible = false;
+		resetFeedPaperGraphic();
 	}
 
 	public function hasPrintedPaperReady():Bool
@@ -205,9 +224,47 @@ class PrinterStation extends FlxGroup
 		return lastScannedDoc;
 	}
 
+	public function setTerminalPrintJob(job:TerminalPrintJob):Void
+	{
+		terminalPrintJob = job;
+	}
+
+	public function consumeTerminalPrintJob():TerminalPrintJob
+	{
+		var job = terminalPrintJob;
+		terminalPrintJob = TerminalPrintJob.None;
+		return job;
+	}
+
+	public function consumePrintSource():Null<DeskDocument>
+	{
+		var doc = lastScannedDoc;
+		lastScannedDoc = null;
+		return doc;
+	}
+
 	public function clearLastScannedDocument():Void
 	{
 		lastScannedDoc = null;
+	}
+
+	public function resetForNewDay():Void
+	{
+		if (paperTween != null)
+		{
+			paperTween.cancel();
+			paperTween = null;
+		}
+		clearScanVisuals();
+		isScanning = false;
+		isPrinting = false;
+		printCompleted = false;
+		lastScannedDoc = null;
+		terminalPrintJob = TerminalPrintJob.None;
+		isPaused = false;
+		paper.visible = false;
+		paper.clipRect = null;
+		resetFeedPaperGraphic();
 	}
 
 	public function startScan(doc:DeskDocument, onComplete:Void->Void):Void
@@ -222,7 +279,8 @@ class PrinterStation extends FlxGroup
 		var s = body.scale.x;
 		scanPreview = new FlxSprite();
 		scanPreview.loadGraphic(doc.getClosedGraphicPath());
-		scanPreview.scale.set(doc.scale.x, doc.scale.y);
+		var previewScale = doc.getClosedDisplayScale();
+		scanPreview.scale.set(previewScale, previewScale);
 		scanPreview.updateHitbox();
 		scanPreview.angle = 0;
 		scanPreview.x = body.x + SCAN_DOC_X * s - scanPreview.width * 0.5;
@@ -384,7 +442,7 @@ class PrinterStation extends FlxGroup
 
 	function updatePaperClip():Void
 	{
-		if (!isPrinting && !printCompleted)
+		if (isScanning || (!isPrinting && !printCompleted))
 		{
 			paper.visible = false;
 			paper.clipRect = null;

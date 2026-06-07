@@ -45,6 +45,8 @@ class MonitorOverlay extends FlxGroup
 	var captureOnPostDraw:Void->Void;
 	var lastCrtW:Int = 0;
 	var lastCrtH:Int = 0;
+	public var onMonitorClosed:Void->Void;
+	public var onMonitorSlideOutComplete:Void->Void;
 
 	var scanLineT:Float = -1.0;
 	var scanLineCooldown:Float = 3.0;
@@ -148,7 +150,47 @@ class MonitorOverlay extends FlxGroup
 
 	public function setOnPrintRequest(cb:Void->Bool):Void
 	{
-		screenUi.onPrintRequest = cb;
+		screenUi.setOnPrintRequest(cb);
+	}
+
+	public function setOnPrintChecklistRequest(cb:Void->Bool):Void
+	{
+		screenUi.setOnPrintChecklistRequest(cb);
+	}
+
+	public function setOnSubmitForApprovalRequest(cb:Void->Bool):Void
+	{
+		screenUi.setOnSubmitForApprovalRequest(cb);
+	}
+
+	public function setOnConversationLogRequest(cb:Void->Array<ConversationLogEntry>):Void
+	{
+		screenUi.onConversationLogRequest = cb;
+	}
+
+	public function resetScreen():Void
+	{
+		screenUi.reset();
+	}
+
+	public function consumePendingLoanFolderSlide():Bool
+	{
+		return screenUi.consumePendingLoanFolderSlide();
+	}
+
+	public function consumePendingAutoPrintLoanForm():Bool
+	{
+		return screenUi.consumePendingAutoPrintLoanForm();
+	}
+
+	public function getLoanId():Null<String>
+	{
+		return screenUi.getLoanId();
+	}
+
+	public function getLoanApplicationData():Null<LoanApplicationData>
+	{
+		return screenUi.getLoanApplicationData();
 	}
 
 	public function show():Void
@@ -187,6 +229,7 @@ class MonitorOverlay extends FlxGroup
 
 		screenUi.suspendInput();
 		isAnimating = true;
+		notifyMonitorClosed();
 
 		if (slideTween != null)
 		{
@@ -208,6 +251,7 @@ class MonitorOverlay extends FlxGroup
 				crtOverlay.visible = false;
 				animOverlay.visible = false;
 				slideTween = null;
+				notifyMonitorSlideOutComplete();
 			}
 		});
 	}
@@ -255,6 +299,7 @@ class MonitorOverlay extends FlxGroup
 			screenUi.reset();
 		}
 		screenUi.visible = true;
+		screenUi.refreshOnShow();
 		scanLineT = -1.0;
 		scanLineCooldown = 2.0 + Math.random() * 4.0;
 		distortTimer = -1.0;
@@ -369,9 +414,15 @@ class MonitorOverlay extends FlxGroup
 			return blitCopy;
 		}
 
+		var savedFilters = cam.flashSprite.filters;
+		cam.flashSprite.filters = null;
+
 		var copy = new BitmapData(w, h, true, cam.bgColor);
 		var matrix = new Matrix(1, 0, 0, 1, cam.flashSprite.x, cam.flashSprite.y);
 		copy.draw(cam.flashSprite, matrix, null, null, new Rectangle(0, 0, w, h), true);
+
+		cam.flashSprite.filters = savedFilters;
+
 		return copy;
 	}
 
@@ -646,6 +697,18 @@ class MonitorOverlay extends FlxGroup
 	{
 		sprite.pixels.fillRect(new Rectangle(INNER_X, INNER_Y, INNER_W, INNER_H), 0xFF000000);
 		sprite.dirty = true;
+	}
+
+	function notifyMonitorClosed():Void
+	{
+		if (onMonitorClosed != null)
+			onMonitorClosed();
+	}
+
+	function notifyMonitorSlideOutComplete():Void
+	{
+		if (onMonitorSlideOutComplete != null)
+			onMonitorSlideOutComplete();
 	}
 
 	function applyDisplaySize():Void

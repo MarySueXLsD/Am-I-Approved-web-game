@@ -8,6 +8,7 @@ import flixel.input.keyboard.FlxKey;
 import flixel.text.FlxText;
 import flixel.tweens.FlxEase;
 import flixel.tweens.FlxTween;
+import flixel.math.FlxPoint;
 import flixel.util.FlxColor;
 import StringTools;
 import openfl.Lib;
@@ -21,12 +22,22 @@ class PlayState extends FlxState
 	var documentsAbove:FlxGroup;
 	var documentsBelow:FlxGroup;
 	var passport:Passport;
-	var idDocument:IdDocument;
+	var idDocuments:Array<IdDocument>;
+	var printedBankDocuments:Array<BankDocument> = [];
+	var bookDocument:BookDocument;
+	var jobContractDocuments:Array<JobContractDocument>;
 	var magnifyingGlass:MagnifyingGlass;
 	var monitor:MonitorOverlay;
 	var printerStation:PrinterStation;
 	var shredderStation:ShredderStation;
-	var stampPanel:FlxSprite;
+	var clientPanel:LayoutPanel;
+	var clientWall:FlxSprite;
+	var clientTablePanel:LayoutPanel;
+	var clientTableImg:FlxSprite;
+	var computerPanel:LayoutPanel;
+	var computerTable:FlxSprite;
+	var computerScreenImg:FlxSprite;
+	var computerHud:ComputerHud;
 	var calculatorObj:FlxSprite;
 	var calculatorExpandedY = 0.0;
 	var calculatorCollapsedY = 0.0;
@@ -50,6 +61,15 @@ class PlayState extends FlxState
 	var calculatorFocused = false;
 	var printerPausedByMonitor = false;
 	var printedPapers:Array<PrinterPaperDocument> = [];
+	var loanFolder:LoanFolderDocument;
+	var loanFolderSubmitting = false;
+	var pendingLoanFolderSubmit = false;
+	var pendingLoanFolderSlide = false;
+	var pendingAutoPrintLoanForm = false;
+	var currentClientIndex = 0;
+	var currentScenario:ClientScenario;
+	var pendingClientAdvance = false;
+	var pendingLoanReview:Null<LoanReviewResult> = null;
 
 	var clientImg:FlxSprite;
 	var clientFinalX:Float;
@@ -58,7 +78,16 @@ class PlayState extends FlxState
 	var clientAnimTimer:Float = 0;
 	var clientBobOffset:Float = 0;
 	var clientDialog:ClientDialog;
-
+	var beginningDayOverlay:BeginningDayOverlay;
+	var mainMenuOverlay:MainMenuOverlay;
+	var shiftPauseOverlay:ShiftPauseOverlay;
+	var screenFadeOverlay:ScreenFadeOverlay;
+	var scanModeOverlay:ScanModeOverlay;
+	var scanSelectionConsumed = false;
+	var scanClickPending = false;
+	var scanClickTimer = 0.0;
+	var scanClickX = 0.0;
+	var scanClickY = 0.0;
 	static inline var LEFT_COL_RATIO:Float = 0.3;
 	static inline var CLIENT_H_RATIO:Float = 0.4;
 	static inline var CLIENT_TABLE_H_RATIO:Float = 0.25;
@@ -85,10 +114,14 @@ class PlayState extends FlxState
 		"1", "2", "3", "+",
 		"0", ".", "="
 	];
+	static inline var SCAN_DOUBLE_CLICK_TIME = 0.35;
+	static inline var SCAN_DOUBLE_CLICK_DIST = 12.0;
 
 	override function create():Void
 	{
 		super.create();
+		GameSettings.apply();
+		GameVisualFilter.install();
 		DebugOverlay.init();
 		#if FLX_DEBUG
 		if (Lib.current.stage != null)
@@ -123,17 +156,15 @@ class PlayState extends FlxState
 		var employerTableY = 0;
 		var employerTableH = screenH;
 
-		var client = new LayoutPanel(0, 0, leftW, clientH, "Client", FlxColor.fromRGB(42, 58, 74));
-		add(client);
+		clientPanel = new LayoutPanel(0, 0, leftW, clientH, "Client", FlxColor.fromRGB(42, 58, 74));
 
-		var clientWall = new FlxSprite(0, 0);
+		clientWall = new FlxSprite(0, 0);
 		clientWall.loadGraphic("static/wall.png");
 		clientWall.setGraphicSize(leftW, clientH);
 		clientWall.updateHitbox();
-		add(clientWall);
 
 		clientImg = new FlxSprite(0, 0);
-		clientImg.loadGraphic("static/client.png");
+		clientImg.loadGraphic(ClientPortraits.defaultPath());
 		var clientScale = (leftW * 0.75) / clientImg.frameWidth;
 		clientImg.scale.set(clientScale, clientScale);
 		clientImg.updateHitbox();
@@ -144,23 +175,18 @@ class PlayState extends FlxState
 		clientImg.color = FlxColor.BLACK;
 		clientAnimPhase = 1;
 		clientAnimTimer = 0;
-		add(clientImg);
 
 		var dialogMaxW = Std.int(leftW * 0.75);
 		clientDialog = new ClientDialog(leftW, 0.0, clientH, dialogMaxW, clientImg, clientFinalY);
-		add(clientDialog);
 
-		var clientTable = new LayoutPanel(0, clientTableY, leftW, clientTableH, "Client's table", FlxColor.fromRGB(52, 68, 84));
-		add(clientTable);
+		clientTablePanel = new LayoutPanel(0, clientTableY, leftW, clientTableH, "Client's table", FlxColor.fromRGB(52, 68, 84));
 
-		var clientTableImg = new FlxSprite(0, clientTableY);
+		clientTableImg = new FlxSprite(0, clientTableY);
 		clientTableImg.loadGraphic("static/table.png");
 		clientTableImg.setGraphicSize(leftW, clientTableH);
 		clientTableImg.updateHitbox();
-		add(clientTableImg);
 
-		var computer = new LayoutPanel(0, computerY, leftW, computerH, "Computer", FlxColor.fromRGB(44, 54, 68));
-		add(computer);
+		computerPanel = new LayoutPanel(0, computerY, leftW, computerH, "Computer", FlxColor.fromRGB(44, 54, 68));
 
 		var hudFont = Std.int(Math.max(7, FlxG.height / 72));
 		var hudBottomPad = Std.int(Math.max(6, FlxG.height / 80));
@@ -171,25 +197,22 @@ class PlayState extends FlxState
 		if (computerImgH < 1)
 			computerImgH = 1;
 
-		var computerTable = new FlxSprite(0, computerY);
+		computerTable = new FlxSprite(0, computerY);
 		computerTable.loadGraphic("static/computer_table.png");
 		computerTable.setGraphicSize(leftW, computerImgH);
 		computerTable.updateHitbox();
-		add(computerTable);
 
 		var computerImgScale = 0.85;
 		var computerImgW = Std.int(leftW * computerImgScale);
 		var computerImgDrawH = Std.int(computerImgH * computerImgScale);
 		var computerImgX = Std.int((leftW - computerImgW) * 0.5);
 		var computerImgY = computerY + Std.int((computerImgH - computerImgDrawH) * 0.5);
-		var computerImg = new FlxSprite(computerImgX, computerImgY);
-		computerImg.loadGraphic("static/computer.png");
-		computerImg.setGraphicSize(computerImgW, computerImgDrawH);
-		computerImg.updateHitbox();
-		add(computerImg);
+		computerScreenImg = new FlxSprite(computerImgX, computerImgY);
+		computerScreenImg.loadGraphic("static/computer.png");
+		computerScreenImg.setGraphicSize(computerImgW, computerImgDrawH);
+		computerScreenImg.updateHitbox();
 
-		var computerHud = new ComputerHud(0, computerY + computerImgH, leftW, computerHudH);
-		add(computerHud);
+		computerHud = new ComputerHud(0, computerY + computerImgH, leftW, computerHudH);
 
 		var employerTable = new LayoutPanel(employerX, employerTableY, employerW, employerTableH, "Employer's table", FlxColor.fromRGB(32, 48, 62));
 		add(employerTable);
@@ -199,15 +222,6 @@ class PlayState extends FlxState
 
 		var dotGrid = createDotGrid(employerX, employerTableY, employerW, employerTableH);
 		add(dotGrid);
-
-		stampPanel = new FlxSprite();
-		stampPanel.loadGraphic("static/stamp_panel.png");
-		var stampTargetH = employerTableH * 0.15;
-		var stampScale = stampTargetH / stampPanel.frameHeight;
-		stampPanel.scale.set(stampScale, stampScale);
-		stampPanel.updateHitbox();
-		stampPanel.x = employerX + employerW - stampPanel.width;
-		stampPanel.y = employerTableY + employerTableH * 0.32 - stampPanel.height * 0.5;
 
 		var printerMargin = Std.int(Math.max(4, employerTableH * 0.01));
 		var printerTargetH = employerTableH * 0.2;
@@ -305,20 +319,50 @@ class PlayState extends FlxState
 		passport = new Passport(zones, documentsAbove);
 		passport.visible = false;
 		passport.onDroppedOnPrinter = handleDocumentDroppedOnPrinter;
-		idDocument = new IdDocument(zones, documentsAbove);
-		idDocument.onDroppedOnPrinter = handleDocumentDroppedOnPrinter;
-		var idPosX = leftW * 0.5 - idDocument.width * 0.5;
-		var idPosY = clientTableY + clientTableH * 0.5 - idDocument.height * 0.5;
-		idDocument.setPosition(idPosX, idPosY);
+		idDocuments = [];
+		for (variant in IdCardLayouts.defaultDeskVariants())
+		{
+			var idDoc = new IdDocument(zones, documentsAbove, variant);
+			idDoc.onDroppedOnPrinter = handleDocumentDroppedOnPrinter;
+			idDocuments.push(idDoc);
+			documentsAbove.add(idDoc);
+			stashDocumentOffDesk(idDoc);
+		}
+		bookDocument = new BookDocument(zones, documentsAbove);
+		bookDocument.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
+		bookDocument.onDroppedOnShredder = handleNonPrintableDocumentDrop;
+		documentsAbove.add(bookDocument);
+		jobContractDocuments = [];
+		for (variant in JobContractLayouts.defaultDeskVariants())
+		{
+			var jobContractDoc = new JobContractDocument(zones, documentsAbove, variant);
+			jobContractDoc.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
+			jobContractDoc.onDroppedOnShredder = handleNonPrintableDocumentDrop;
+			jobContractDocuments.push(jobContractDoc);
+			documentsAbove.add(jobContractDoc);
+			stashDocumentOffDesk(jobContractDoc);
+		}
+		layoutClientTableDocuments();
 
 		magnifyingGlass = new MagnifyingGlass(zones, documentsAbove);
-		magnifyingGlass.placeBeside(idDocument);
+		magnifyingGlass.placeBeside(bookDocument);
 
-		documentsAbove.add(idDocument);
 		documentsAbove.add(magnifyingGlass);
 		DeskDocument.onDrawLayerChanged = moveDocumentToLayer;
-		DeskDocument.onCanStartDrag = isTopmostDocumentAtPoint;
+		DeskDocument.resolveClientTableLayoutTarget = getClientTableLayoutTarget;
+		DeskDocument.onUpdateDragPresentation = updateDraggedDocPresentation;
+		DeskDocument.isOpenFolderStackUnderDragHover = isOpenFolderStackUnderDragHover;
+		DeskDocument.onLensCamerasSync = syncDocumentLensCameras;
+		DeskDocument.onDeskPropsLensSync = syncDeskPropCameras;
+		DeskDocument.lensSyncGroups = [documentsAbove, documentsBelow];
+		DeskDocument.onCanStartDrag = canStartDocumentDrag;
+		DeskDocument.isTopmostAtPoint = isTopmostDocumentAtPoint;
+		DeskDocument.frontmostDocumentAtPoint = frontmostDocumentAtPoint;
+		DeskDocument.magnifierHitsPoint = magnifierHitsPoint;
+		DeskDocument.isOverDeskPropsAtPoint = cursorOverDeskPropsAt;
+		DeskDocument.isAboveDrawLayerBlockingPoint = isAboveDrawLayerBlockingPoint;
 		addDeskPropsAndDocuments();
+		syncDeskPropCameras();
 
 		var lc = magnifyingGlass.lensCam;
 		var cc = magnifyingGlass.coverCam;
@@ -327,79 +371,157 @@ class PlayState extends FlxState
 			employerTable.cameras = [FlxG.camera, lc];
 			employerTableTiles.cameras = [FlxG.camera, lc];
 			dotGrid.cameras = [FlxG.camera, lc];
-			stampPanel.cameras = [FlxG.camera];
-			printerStation.setStationCameras([FlxG.camera]);
-			shredderStation.setStationCameras([FlxG.camera]);
-			calculatorObj.cameras = [FlxG.camera];
-			calculatorToggleOverlay.cameras = [FlxG.camera];
-			calculatorToggleLabel.cameras = [FlxG.camera];
-			calculatorDisplayScan.cameras = [FlxG.camera];
-			calculatorDisplayText.cameras = [FlxG.camera];
-			for (overlay in calculatorBtnOverlays)
-				overlay.cameras = [FlxG.camera];
-			passport.cameras = [FlxG.camera, lc];
-			idDocument.cameras = [FlxG.camera, lc];
-		}
-		if (cc != null)
-		{
-			client.cameras = [FlxG.camera, cc];
-			clientWall.cameras = [FlxG.camera, cc];
-			clientImg.cameras = [FlxG.camera, cc];
-			clientDialog.setCameras([FlxG.camera, cc]);
-			clientTable.cameras = [FlxG.camera, cc];
-			clientTableImg.cameras = [FlxG.camera, cc];
-			computer.cameras = [FlxG.camera, cc];
-			computerTable.cameras = [FlxG.camera, cc];
-			computerImg.cameras = [FlxG.camera, cc];
-			computerHud.cameras = [FlxG.camera, cc];
-			stampPanel.cameras = [FlxG.camera, cc];
-			printerStation.setStationCameras([FlxG.camera, cc]);
-			shredderStation.setStationCameras([FlxG.camera, cc]);
-			calculatorObj.cameras = [FlxG.camera, cc];
-			calculatorToggleOverlay.cameras = [FlxG.camera, cc];
-			calculatorToggleLabel.cameras = [FlxG.camera, cc];
-			calculatorDisplayScan.cameras = [FlxG.camera, cc];
-			calculatorDisplayText.cameras = [FlxG.camera, cc];
-			for (overlay in calculatorBtnOverlays)
-				overlay.cameras = [FlxG.camera, cc];
 		}
 
 		CitizenRegistry.load();
-		if (CitizenRegistry.all.length > 0)
-		{
-			var citizen = CitizenRegistry.all[0];
-			passport.setCitizen(citizen);
-			idDocument.setCitizen(citizen);
-			clientDialog.setCitizenName(citizen.firstName + " " + citizen.lastName);
-		}
+		currentClientIndex = 0;
+		currentScenario = ClientScenarios.get(currentClientIndex);
+		applyClientScenario();
 
 		clientDialog.onPassportRequest = function()
 		{
 			spawnPassport();
 		};
 
+		clientDialog.onAutoDocumentsRequest = function()
+		{
+			deliverScenarioDocuments();
+		};
+
+		clientDialog.onVisitComplete = function()
+		{
+			if (pendingClientAdvance)
+				advanceToNextClient();
+		};
+
+		clientDialog.onScanRequest = function()
+		{
+			enterScanMode();
+		};
+
+		clientDialog.onScanDismiss = function()
+		{
+			if (scanModeOverlay != null)
+				scanModeOverlay.setActive(false);
+		};
+
 		monitor = new MonitorOverlay();
 		monitor.setOnPrintRequest(handleMonitorPrintRequest);
+		monitor.setOnPrintChecklistRequest(handleMonitorPrintChecklistRequest);
+		monitor.setOnSubmitForApprovalRequest(handleMonitorSubmitForApprovalRequest);
+		monitor.setOnConversationLogRequest(function() return clientDialog.getConversationLog());
+		monitor.onMonitorClosed = handleMonitorClosed;
+		monitor.onMonitorSlideOutComplete = handleMonitorSlideOutComplete;
 		add(monitor);
+
+		beginningDayOverlay = new BeginningDayOverlay();
+		add(beginningDayOverlay);
+
+		mainMenuOverlay = new MainMenuOverlay(showBeginningDaySequence);
+		add(mainMenuOverlay);
+
+		screenFadeOverlay = new ScreenFadeOverlay();
+		add(screenFadeOverlay);
+
+		shiftPauseOverlay = new ShiftPauseOverlay(showBeginningDaySequence, showMainMenuFromPause, fadeScreenToBlack);
+		add(shiftPauseOverlay);
+
+		scanModeOverlay = new ScanModeOverlay(leftW, clientH);
+		ScanModeOverlay.isPointAllowed = isScanModePointAllowed;
+		var scanGrayCams = [FlxG.camera];
+		if (lc != null)
+			scanGrayCams.push(lc);
+		if (cc != null)
+		{
+			scanModeOverlay.setHintCameras([FlxG.camera, cc]);
+			scanGrayCams.push(cc);
+		}
+		scanModeOverlay.setGrayOverlayCameras(scanGrayCams);
+		scanModeOverlay.onActionConfirm = function(actionId:String)
+		{
+			if (actionId == "review_loan_application")
+				startLoanApplicationReview();
+			else
+				clientDialog.startBookScanAction(actionId);
+		};
+		add(scanModeOverlay);
+
 	}
 
 	override function update(elapsed:Float):Void
 	{
+		GameVisualFilter.ensureAllCameras();
+		scanSelectionConsumed = false;
+		ScanModeOverlay.suppressDocumentPress = false;
 		updateClientEntrance(elapsed);
 		syncCalculatorZone();
 		syncPrinterPauseForMonitor();
-		magnifyingGlass.setHidden(monitor.isActive());
+		magnifyingGlass.setHidden(monitor.isActive() || beginningDayOverlay.isShowing || mainMenuOverlay.isShowing
+			|| shiftPauseOverlay.isActive());
 		updateCalculatorToggleUi();
 		updateCalculatorDisplayVisuals(elapsed);
 		updateCalculatorButtonOverlay();
 
 		var p = FlxG.mouse.getViewPosition();
 
-		if (!monitor.isActive() && FlxG.mouse.justPressed && !MonitorOverlay.blocksWorldInput())
+		if (screenFadeOverlay.isBusy)
+		{
+			bringToFront(screenFadeOverlay);
+			super.update(elapsed);
+			return;
+		}
+
+		updateScanModeUi(p, elapsed);
+
+		if (beginningDayOverlay.isShowing)
+		{
+			if (FlxG.mouse.justPressed)
+				beginningDayOverlay.handleClick(p);
+			super.update(elapsed);
+			return;
+		}
+
+		if (mainMenuOverlay.isShowing)
+		{
+			if (FlxG.mouse.wheel != 0)
+				mainMenuOverlay.handleWheel(FlxG.mouse.wheel);
+			if (FlxG.mouse.justPressed)
+				mainMenuOverlay.handleClick(p);
+			super.update(elapsed);
+			return;
+		}
+
+		if (shiftPauseOverlay.isActive())
+		{
+			if (FlxG.keys.justPressed.ESCAPE)
+				shiftPauseOverlay.handleEscape();
+			if (FlxG.mouse.justPressed)
+				shiftPauseOverlay.handleClick(p);
+			super.update(elapsed);
+			return;
+		}
+
+		if (FlxG.keys.justPressed.ESCAPE && !beginningDayOverlay.isShowing && !mainMenuOverlay.isShowing)
+		{
+			remove(shiftPauseOverlay, false);
+			add(shiftPauseOverlay);
+			shiftPauseOverlay.show();
+			super.update(elapsed);
+			return;
+		}
+
+		if (!scanSelectionConsumed && !monitor.isActive() && FlxG.mouse.justPressed && !MonitorOverlay.blocksWorldInput()
+			&& !BeginningDayOverlay.blocksWorldInput() && !MainMenuOverlay.blocksWorldInput()
+			&& !ShiftPauseOverlay.blocksWorldInput() && !ScreenFadeOverlay.blocksWorldInput()
+			&& !scanModeBlocksPoint(p))
+		{
 			tryPickupPrintedPaper(p);
+		}
 
 		if (monitor.isActive())
 		{
+			fadeCalculatorButtonOverlays(elapsed);
+
 			if (!monitor.isBusy)
 				monitor.updateScreenInput(p);
 
@@ -421,6 +543,10 @@ class PlayState extends FlxState
 
 		super.update(elapsed);
 		syncDocumentLayers();
+
+		if (scanSelectionConsumed)
+			return;
+
 		updateCalculatorToggleInput(p);
 		updateCalculatorButtonInput(p);
 		updateCalculatorFocus(p);
@@ -429,6 +555,12 @@ class PlayState extends FlxState
 		if (!FlxG.mouse.justPressed)
 			return;
 		if (clientDialog.consumedClick)
+			return;
+
+		if (scanModeOverlay != null && scanModeOverlay.isActive)
+			return;
+
+		if (scanModeBlocksPoint(p))
 			return;
 
 		if (!isComputerZoneClick() || isDocumentAtMouse())
@@ -441,7 +573,17 @@ class PlayState extends FlxState
 	{
 		// Large/open employer-table docs draw under desk props; closed docs draw on top.
 		add(documentsBelow);
-		add(stampPanel);
+		// Left-column panels sit above open employer docs so ID text/card cannot bleed over them.
+		add(clientPanel);
+		add(clientWall);
+		add(clientImg);
+		add(clientDialog);
+		add(clientTablePanel);
+		add(clientTableImg);
+		add(computerPanel);
+		add(computerTable);
+		add(computerScreenImg);
+		add(computerHud);
 		add(printerStation);
 		add(shredderStation);
 		add(calculatorObj);
@@ -456,23 +598,241 @@ class PlayState extends FlxState
 
 	function syncDocumentLayers():Void
 	{
+		// Place folder first so other closed docs stack above it within documentsAbove.
+		if (loanFolder != null)
+			moveDocumentToLayer(loanFolder);
 		moveDocumentToLayer(passport);
-		moveDocumentToLayer(idDocument);
+		for (idDoc in idDocuments)
+			moveDocumentToLayer(idDoc);
+		for (bankDoc in printedBankDocuments)
+			moveDocumentToLayer(bankDoc);
+		moveDocumentToLayer(bookDocument);
+		for (jobContractDoc in jobContractDocuments)
+			moveDocumentToLayer(jobContractDoc);
 		moveDocumentToLayer(magnifyingGlass);
 		for (paper in printedPapers)
 			movePrintedPaperToLayer(paper);
+		syncAllBankDocumentTextOverlays();
 		syncOpenDocumentCameras();
+	}
+
+	function syncAllBankDocumentTextOverlays():Void
+	{
+		for (bankDoc in printedBankDocuments)
+		{
+			if (bankDoc.isCurrentlyOpen() || bankDoc.isStoredInLoanFolder())
+				bankDoc.syncTextOverlayLayerOrder();
+		}
+
+		if (loanFolder != null)
+		{
+			for (stored in loanFolder.getStoredDocuments())
+			{
+				var bankDoc = Std.downcast(stored, BankDocument);
+				if (bankDoc != null)
+					bankDoc.syncTextOverlayLayerOrder();
+			}
+		}
 	}
 
 	function movePrintedPaperToLayer(paper:PrinterPaperDocument):Void
 	{
-		var target = paper.isOpenOnEmployerTable() ? documentsBelow : documentsAbove;
-		paper.moveToDocumentLayer(target);
+		assignDocToDrawLayer(paper, resolveDrawLayerForDoc(paper));
+		if (paper.isStoredInLoanFolder())
+		{
+			paper.refreshStoredCopyOverlays();
+			var folder = paper.loanFolderStorage;
+			if (folder != null)
+				folder.syncStoredCopiesToLayer();
+		}
 	}
 
 	function moveDocumentToLayer(doc:DeskDocument):Void
 	{
-		var target = doc.visible && doc.isOpenOnEmployerTable() ? documentsBelow : documentsAbove;
+		var printedPaper = Std.downcast(doc, PrinterPaperDocument);
+		if (printedPaper != null)
+		{
+			movePrintedPaperToLayer(printedPaper);
+			return;
+		}
+
+		assignDocToDrawLayer(doc, resolveDrawLayerForDoc(doc));
+		var bankDoc = Std.downcast(doc, BankDocument);
+		if (bankDoc != null && bankDoc.isStoredInLoanFolder())
+			bankDoc.refreshStoredTextOverlays();
+	}
+
+	function resolveDrawLayerForDoc(doc:DeskDocument):FlxGroup
+	{
+		if (doc.isDragging() && doc.isCompactDragPreviewActive())
+			return documentsAbove;
+
+		// Pocket copies share the open folder's below-desk-props layer and stack on top of it.
+		if (doc.loanFolderStorage != null)
+		{
+			var hostFolder = doc.loanFolderStorage;
+			if (hostFolder.isSpreadOpen() && hostFolder.isOpenOnEmployerTable())
+				return documentsBelow;
+			return documentsAbove;
+		}
+
+		if (!doc.isCurrentlyOpen())
+			return documentsAbove;
+
+		var folder = Std.downcast(doc, LoanFolderDocument);
+		if (folder != null && folder.isSpreadOpen() && doc.isOpenOnEmployerTable())
+			return documentsBelow;
+
+		if (doc.visible && doc.isOpenOnEmployerTable())
+			return documentsBelow;
+
+		return documentsAbove;
+	}
+
+	function updateDraggedDocPresentation(doc:DeskDocument):Void
+	{
+		if (doc == null || !doc.isDragging())
+			return;
+
+		if (Std.downcast(doc, LoanFolderDocument) != null || Std.downcast(doc, MagnifyingGlass) != null)
+		{
+			doc.endCompactDragPreview();
+			return;
+		}
+
+		var mouse = FlxG.mouse.getViewPosition();
+		if (shouldUseCompactDragPreview(doc, mouse.x, mouse.y))
+			doc.beginCompactDragPreview();
+		else
+			doc.endCompactDragPreview();
+
+		if (isOpenFolderStackUnderDragHover())
+		{
+			assignDocToDrawLayer(doc, documentsAbove);
+			doc.bringToFrontInLayer();
+			if (loanFolder != null)
+				loanFolder.syncStoredCopiesToLayer();
+		}
+	}
+
+	function isOpenFolderStackUnderDragHover():Bool
+	{
+		var drag = DeskDocument.currentDrag;
+		if (drag == null || Std.downcast(drag, LoanFolderDocument) != null)
+			return false;
+
+		var folder = loanFolder;
+		if (folder == null || !folder.isSpreadOpen() || !folder.isOpenOnEmployerTable())
+			return false;
+
+		var mouse = FlxG.mouse.getViewPosition();
+		return isPointOverOpenFolderStack(folder, mouse.x, mouse.y);
+	}
+
+	function isPointOverOpenFolderStack(folder:LoanFolderDocument, mx:Float, my:Float):Bool
+	{
+		if (folder.isDepositHoverAt(mx, my))
+			return true;
+
+		if (folder.pointInStorageWorld(mx, my))
+			return true;
+
+		var p = FlxPoint.get(mx, my);
+		for (stored in folder.getStoredDocuments())
+		{
+			if (stored.visible && stored.overlapsPoint(p))
+			{
+				p.put();
+				return true;
+			}
+		}
+		p.put();
+		return false;
+	}
+
+	function shouldUseCompactDragPreview(doc:DeskDocument, mx:Float, my:Float):Bool
+	{
+		if (cursorOverDeskProps(mx, my))
+			return true;
+
+		var folder = loanFolder;
+		if (folder == null || !folder.isSpreadOpen() || !folder.isOpenOnEmployerTable())
+			return false;
+
+		return isPointOverOpenFolderStack(folder, mx, my);
+	}
+
+	function cursorOverDeskProps(mx:Float, my:Float):Bool
+	{
+		var p = FlxPoint.get(mx, my);
+		var hit = cursorOverDeskPropsAt(p);
+		p.put();
+		return hit;
+	}
+
+	function cursorOverDeskPropsAt(p:FlxPoint):Bool
+	{
+		if (printerStation != null
+			&& cursorInAxisRect(p.x, p.y, printerStation.getBodyX(), printerStation.getBodyY(), printerStation.getBodyW(), printerStation.getBodyH()))
+			return true;
+
+		if (shredderStation != null
+			&& cursorInAxisRect(p.x, p.y, shredderStation.getBodyX(), shredderStation.getBodyY(), shredderStation.getBodyW(), shredderStation.getBodyH()))
+			return true;
+
+		if (calculatorObj != null && calculatorObj.visible && calculatorObj.overlapsPoint(p))
+			return true;
+
+		if (calculatorToggleOverlay != null && calculatorToggleOverlay.visible && calculatorToggleOverlay.overlapsPoint(p))
+			return true;
+
+		if (calculatorDisplayScan != null && calculatorDisplayScan.visible && calculatorDisplayScan.overlapsPoint(p))
+			return true;
+
+		for (overlay in calculatorBtnOverlays)
+		{
+			if (overlay != null && overlay.visible && overlay.overlapsPoint(p))
+				return true;
+		}
+
+		if (p.x >= 0 && p.x < zones.leftW)
+		{
+			if (p.y >= 0 && p.y < zones.clientH)
+				return true;
+			if (p.y >= zones.clientTableY && p.y < zones.clientTableY + zones.clientTableH)
+				return true;
+			if (p.y >= zones.computerY && p.y < zones.computerY + zones.computerH)
+				return true;
+		}
+
+		return false;
+	}
+
+	function isAboveDrawLayerBlockingPoint(p:FlxPoint):Bool
+	{
+		for (member in documentsAbove.members)
+		{
+			if (member == null)
+				continue;
+
+			var doc = Std.downcast(member, DeskDocument);
+			if (doc == null || !doc.visible || doc.isStoredInLoanFolder())
+				continue;
+
+			if (doc.overlapsPoint(p))
+				return true;
+		}
+
+		return false;
+	}
+
+	function cursorInAxisRect(px:Float, py:Float, rx:Float, ry:Float, rw:Float, rh:Float):Bool
+	{
+		return px >= rx && px < rx + rw && py >= ry && py < ry + rh;
+	}
+
+	function assignDocToDrawLayer(doc:DeskDocument, target:FlxGroup):Void
+	{
 		var printedPaper = Std.downcast(doc, PrinterPaperDocument);
 		if (printedPaper != null)
 		{
@@ -494,7 +854,62 @@ class PlayState extends FlxState
 			return;
 		}
 
+		var bankDoc = Std.downcast(doc, BankDocument);
+		if (bankDoc != null)
+		{
+			bankDoc.moveToDocumentLayer(target);
+			return;
+		}
+
+		var bookDoc = Std.downcast(doc, BookDocument);
+		if (bookDoc != null)
+		{
+			bookDoc.moveToDocumentLayer(target);
+			return;
+		}
+
+		var folder = Std.downcast(doc, LoanFolderDocument);
+		if (folder != null)
+		{
+			folder.moveToLayer(target);
+			folder.syncStoredCopiesToLayer();
+			return;
+		}
+
 		doc.moveToLayer(target);
+	}
+
+	function syncDeskPropCameras():Void
+	{
+		var cams = [FlxG.camera];
+		if (magnifyingGlass != null)
+		{
+			var coverCam = magnifyingGlass.coverCam;
+			var lensActive = coverCam != null && magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
+			if (lensActive)
+				cams.push(coverCam);
+			magnifyingGlass.cameras = cams;
+		}
+
+		clientPanel.cameras = cams;
+		clientWall.cameras = cams;
+		clientImg.cameras = cams;
+		clientDialog.setCameras(cams);
+		clientTablePanel.cameras = cams;
+		clientTableImg.cameras = cams;
+		computerPanel.cameras = cams;
+		computerTable.cameras = cams;
+		computerScreenImg.cameras = cams;
+		computerHud.setCameras(cams);
+		printerStation.setStationCameras(cams);
+		shredderStation.setStationCameras(cams);
+		calculatorObj.cameras = cams;
+		calculatorToggleOverlay.cameras = cams;
+		calculatorToggleLabel.cameras = cams;
+		calculatorDisplayScan.cameras = cams;
+		calculatorDisplayText.cameras = cams;
+		for (overlay in calculatorBtnOverlays)
+			overlay.cameras = cams;
 	}
 
 	function syncOpenDocumentCameras():Void
@@ -502,8 +917,236 @@ class PlayState extends FlxState
 		if (magnifyingGlass == null)
 			return;
 
+		syncDeskPropCameras();
 		syncDocumentLensCameras(passport);
-		syncDocumentLensCameras(idDocument);
+		for (idDoc in idDocuments)
+			syncDocumentLensCameras(idDoc);
+		for (bankDoc in printedBankDocuments)
+			syncDocumentLensCameras(bankDoc);
+		syncDocumentLensCameras(bookDocument);
+		for (jobContractDoc in jobContractDocuments)
+			syncDocumentLensCameras(jobContractDoc);
+		if (loanFolder != null)
+		{
+			syncDocumentLensCameras(loanFolder);
+			for (stored in loanFolder.getStoredDocuments())
+				syncDocumentLensCameras(stored);
+		}
+	}
+
+	function layoutClientTableDocuments():Void
+	{
+		for (idDoc in idDocuments)
+		{
+			if (!idDoc.belongsInClientTableRow() || idDoc.isSnappingToTable())
+				continue;
+			var target = getClientTableLayoutTarget(idDoc);
+			idDoc.setPosition(target.x, target.y);
+		}
+		for (bankDoc in printedBankDocuments)
+		{
+			if (!bankDoc.belongsInClientTableRow() || bankDoc.isSnappingToTable())
+				continue;
+			bankDoc.refreshDisplaySize();
+			var bankTarget = getClientTableLayoutTarget(bankDoc);
+			bankDoc.setPosition(bankTarget.x, bankTarget.y);
+		}
+		if (bookDocument != null && bookDocument.belongsInClientTableRow() && !bookDocument.isSnappingToTable())
+		{
+			bookDocument.refreshDisplaySize();
+			var bookTarget = getClientTableLayoutTarget(bookDocument);
+			bookDocument.setPosition(bookTarget.x, bookTarget.y);
+		}
+		for (jobContractDoc in jobContractDocuments)
+		{
+			if (!jobContractDoc.belongsInClientTableRow() || jobContractDoc.isSnappingToTable())
+				continue;
+			jobContractDoc.refreshDisplaySize();
+			var contractTarget = getClientTableLayoutTarget(jobContractDoc);
+			jobContractDoc.setPosition(contractTarget.x, contractTarget.y);
+		}
+	}
+
+	function includesDocInClientTableLayout(doc:DeskDocument, forDoc:DeskDocument):Bool
+	{
+		if (doc.isStoredInLoanFolder())
+			return false;
+		if (doc == forDoc)
+			return true;
+		return doc.belongsInClientTableRow();
+	}
+
+	function getClientTableLayoutTarget(doc:DeskDocument):{x:Float, y:Float}
+	{
+		var gap = zones.leftW * 0.015;
+		var totalW = 0.0;
+		var docCount = 0;
+		for (idDoc in idDocuments)
+		{
+			if (!includesDocInClientTableLayout(idDoc, doc))
+				continue;
+			totalW += idDoc.width;
+			docCount += 1;
+		}
+		for (bankDoc in printedBankDocuments)
+		{
+			if (!includesDocInClientTableLayout(bankDoc, doc))
+				continue;
+			totalW += bankDoc.width;
+			docCount += 1;
+		}
+		if (bookDocument != null && includesDocInClientTableLayout(bookDocument, doc))
+		{
+			totalW += bookDocument.width;
+			docCount += 1;
+		}
+		for (jobContractDoc in jobContractDocuments)
+		{
+			if (!includesDocInClientTableLayout(jobContractDoc, doc))
+				continue;
+			totalW += jobContractDoc.width;
+			docCount += 1;
+		}
+		if (docCount == 0)
+		{
+			var fallbackY = zones.clientTableY + zones.clientTableH * 0.5 - doc.height * 0.5;
+			return {x: (zones.leftW - doc.width) * 0.5, y: fallbackY};
+		}
+		totalW += gap * (docCount - 1);
+
+		var startX = (zones.leftW - totalW) * 0.5;
+		var centerY = zones.clientTableY + zones.clientTableH * 0.5;
+		var x = startX;
+		for (idDoc in idDocuments)
+		{
+			if (!includesDocInClientTableLayout(idDoc, doc))
+				continue;
+			if (idDoc == doc)
+				return {x: x, y: centerY - idDoc.height * 0.5};
+			x += idDoc.width + gap;
+		}
+		for (bankDoc in printedBankDocuments)
+		{
+			if (!includesDocInClientTableLayout(bankDoc, doc))
+				continue;
+			if (bankDoc == doc)
+				return {x: x, y: centerY - bankDoc.height * 0.5};
+			x += bankDoc.width + gap;
+		}
+		if (bookDocument != null && includesDocInClientTableLayout(bookDocument, doc))
+		{
+			if (bookDocument == doc)
+				return {x: x, y: centerY - bookDocument.height * 0.5};
+			x += bookDocument.width + gap;
+		}
+		for (jobContractDoc in jobContractDocuments)
+		{
+			if (!includesDocInClientTableLayout(jobContractDoc, doc))
+				continue;
+			if (jobContractDoc == doc)
+				return {x: x, y: centerY - jobContractDoc.height * 0.5};
+			x += jobContractDoc.width + gap;
+		}
+		return {x: (zones.leftW - doc.width) * 0.5, y: centerY - doc.height * 0.5};
+	}
+
+	function applyCurrentCitizen(citizen:Citizen):Void
+	{
+		applyClientPortrait(citizen);
+		passport.setCitizen(citizen);
+		setCitizenOnClientDocuments(citizen);
+		clientDialog.setCitizenName(citizen.firstName + " " + citizen.lastName);
+	}
+
+	function applyClientScenario():Void
+	{
+		if (CitizenRegistry.all.length == 0)
+			return;
+
+		currentScenario = ClientScenarios.get(currentClientIndex);
+		var citizenIdx = currentScenario.citizenIndex;
+		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
+			citizenIdx = 0;
+
+		clientDialog.setScenario(currentScenario);
+		applyCurrentCitizen(CitizenRegistry.all[citizenIdx]);
+		setupDefaultClientTable();
+	}
+
+	function setupDefaultClientTable():Void
+	{
+		passport.visible = false;
+		if (documentsAbove.members.indexOf(passport) >= 0)
+			documentsAbove.remove(passport, true);
+
+		for (idDoc in idDocuments)
+			stashDocumentOffDesk(idDoc);
+		for (jobContractDoc in jobContractDocuments)
+			stashDocumentOffDesk(jobContractDoc);
+
+		bookDocument.prepareClientHandoff();
+		layoutClientTableDocuments();
+		magnifyingGlass.placeBeside(bookDocument);
+		moveDocumentToLayer(bookDocument);
+		moveDocumentToLayer(magnifyingGlass);
+	}
+
+	function stashDocumentOffDesk(doc:DeskDocument):Void
+	{
+		doc.hideFromDesk();
+	}
+
+	function deliverScenarioDocuments():Void
+	{
+		spawnPassport();
+		if (currentScenario.idVariant != null)
+			spawnClientIdDocument(currentScenario.idVariant);
+		layoutClientTableDocuments();
+	}
+
+	function spawnClientIdDocument(variant:IdCardVariant):Void
+	{
+		for (idDoc in idDocuments)
+		{
+			if (idDoc.getVariant() != variant)
+				continue;
+
+			idDoc.prepareClientHandoff();
+			var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
+			idDoc.cameras = [FlxG.camera];
+			if (lensCam != null)
+				idDoc.cameras.push(lensCam);
+
+			if (documentsAbove.members.indexOf(idDoc) < 0)
+				documentsAbove.add(idDoc);
+
+			var target = getClientTableLayoutTarget(idDoc);
+			idDoc.setPosition(target.x, zones.clientTableY - idDoc.height);
+			idDoc.angle = 12;
+
+			FlxTween.tween(idDoc, {y: target.y, angle: 8.0}, 0.5, {ease: FlxEase.bounceOut});
+			moveDocumentToLayer(idDoc);
+			return;
+		}
+	}
+
+	function applyClientPortrait(citizen:Citizen):Void
+	{
+		var portraitPath = currentScenario != null ? currentScenario.portraitPath : ClientPortraits.pathForCitizen(citizen);
+		clientImg.loadGraphic(portraitPath);
+		var clientScale = (zones.leftW * 0.75) / clientImg.frameWidth;
+		clientImg.scale.set(clientScale, clientScale);
+		clientImg.updateHitbox();
+		clientFinalX = (zones.leftW - clientImg.width) / 2;
+		clientFinalY = zones.clientH - clientImg.height + CLIENT_BOB_AMPLITUDE;
+	}
+
+	function setCitizenOnClientDocuments(citizen:Citizen):Void
+	{
+		for (idDoc in idDocuments)
+			idDoc.setCitizen(citizen);
+		for (bankDoc in printedBankDocuments)
+			bankDoc.setCitizen(citizen);
 	}
 
 	function syncDocumentLensCameras(doc:DeskDocument):Void
@@ -522,20 +1165,36 @@ class PlayState extends FlxState
 			return;
 		}
 
-		var docGroup = documentsAbove.members.indexOf(doc) >= 0 ? documentsAbove : (documentsBelow.members.indexOf(doc) >= 0 ? documentsBelow : null);
-		var magnifierGroup = documentsAbove.members.indexOf(magnifyingGlass) >= 0 ? documentsAbove : (documentsBelow.members.indexOf(magnifyingGlass) >= 0 ? documentsBelow : null);
-
-		var shouldZoom = false;
-		if (docGroup != null && magnifierGroup != null && docGroup == magnifierGroup && doc.isCurrentlyOpen())
+		// Top-layer docs must share coverCam with desk props or the cover pass draws
+		// printer/shredder over them once the magnifier is open on the employer table.
+		if (documentsAbove.members.indexOf(doc) >= 0)
 		{
-			var docIndex = docGroup.members.indexOf(doc);
-			var magnifierIndex = magnifierGroup.members.indexOf(magnifyingGlass);
-			shouldZoom = docIndex >= 0 && magnifierIndex >= 0 && docIndex < magnifierIndex;
+			if (coverCam != null)
+				updated.push(coverCam);
+			doc.cameras = updated;
+			return;
 		}
+
+		var docIndex = documentsBelow.members.indexOf(doc);
+		if (docIndex < 0)
+		{
+			doc.cameras = updated;
+			return;
+		}
+
+		var magnifierIndex = documentsBelow.members.indexOf(magnifyingGlass);
+		if (magnifierIndex < 0)
+		{
+			doc.cameras = updated;
+			return;
+		}
+
+		var shouldZoom = DeskDocument.shouldUseLensMagnifier(doc, docIndex, magnifierIndex);
+		var shouldCover = !shouldZoom && DeskDocument.usesMagnifierCoverLayer(doc);
 
 		if (shouldZoom && lensCam != null)
 			updated.push(lensCam);
-		if (!shouldZoom && coverCam != null)
+		else if (shouldCover && coverCam != null)
 			updated.push(coverCam);
 
 		doc.cameras = updated;
@@ -568,6 +1227,137 @@ class PlayState extends FlxState
 		calculatorDisplayText.setBorderStyle(OUTLINE, FlxColor.fromRGB(12, 28, 14), 1);
 		calculatorDisplayText.text = formatCalculatorForUi(calculatorDisplayValue);
 		calculatorDisplayText.alpha = 0.82;
+	}
+
+	function resetToBeginning():Void
+	{
+		if (monitor.isShowing)
+			monitor.hide();
+
+		if (scanModeOverlay != null)
+			scanModeOverlay.setActive(false);
+
+		cancelActiveShredder();
+		unlockPrinterScannedDocuments();
+		printerStation.resetForNewDay();
+		clearAllPrintedPapers();
+		clearAllPrintedBankDocuments();
+		removeLoanFolder();
+		pendingLoanFolderSlide = false;
+		pendingAutoPrintLoanForm = false;
+		pendingLoanFolderSubmit = false;
+		monitor.resetScreen();
+
+		passport.prepareClientHandoff();
+		passport.visible = false;
+		if (documentsAbove.members.indexOf(passport) >= 0)
+			documentsAbove.remove(passport, true);
+
+		for (idDoc in idDocuments)
+			stashDocumentOffDesk(idDoc);
+		clearAllPrintedBankDocuments();
+		bookDocument.prepareClientHandoff();
+		for (jobContractDoc in jobContractDocuments)
+			stashDocumentOffDesk(jobContractDoc);
+		layoutClientTableDocuments();
+		magnifyingGlass.placeBeside(bookDocument);
+		for (idDoc in idDocuments)
+			moveDocumentToLayer(idDoc);
+		for (bankDoc in printedBankDocuments)
+			moveDocumentToLayer(bankDoc);
+		moveDocumentToLayer(bookDocument);
+		for (jobContractDoc in jobContractDocuments)
+			moveDocumentToLayer(jobContractDoc);
+		moveDocumentToLayer(magnifyingGlass);
+
+		clientImg.x = -clientImg.width;
+		clientImg.y = clientFinalY;
+		clientImg.color = FlxColor.BLACK;
+		clientAnimPhase = 1;
+		clientAnimTimer = 0;
+		clientBobOffset = 0;
+
+		GameClock.reset();
+		clientDialog.resetForNewDay();
+		currentClientIndex = 0;
+		pendingClientAdvance = false;
+		pendingLoanReview = null;
+		applyClientScenario();
+
+		printerPausedByMonitor = false;
+		printerStation.setPaused(false);
+	}
+
+	function cancelActiveShredder():Void
+	{
+		var shreddingDoc = shredderStation.cancelActiveShred();
+		if (shreddingDoc == null)
+			return;
+
+		var paper = Std.downcast(shreddingDoc, PrinterPaperDocument);
+		if (paper != null)
+		{
+			printedPapers.remove(paper);
+			paper.disposeCopyDocument();
+			return;
+		}
+
+		var bankDoc = Std.downcast(shreddingDoc, BankDocument);
+		if (bankDoc != null)
+			removePrintedBankDocument(bankDoc);
+	}
+
+	function unlockPrinterScannedDocuments():Void
+	{
+		var scannedDoc = printerStation.getLastScannedDocument();
+		if (scannedDoc != null)
+			scannedDoc.unlockAfterPrinterScan();
+		passport.unlockAfterPrinterScan();
+		for (idDoc in idDocuments)
+			idDoc.unlockAfterPrinterScan();
+		for (bankDoc in printedBankDocuments)
+			bankDoc.unlockAfterPrinterScan();
+		bookDocument.unlockAfterPrinterScan();
+		for (jobContractDoc in jobContractDocuments)
+			jobContractDoc.unlockAfterPrinterScan();
+	}
+
+	function clearAllPrintedPapers():Void
+	{
+		var papers = printedPapers.copy();
+		for (paper in papers)
+		{
+			printedPapers.remove(paper);
+			paper.disposeCopyDocument();
+		}
+	}
+
+	function showBeginningDaySequence():Void
+	{
+		screenFadeOverlay.reset();
+		remove(beginningDayOverlay, false);
+		add(beginningDayOverlay);
+		beginningDayOverlay.show(resetToBeginning);
+	}
+
+	function showMainMenuFromPause():Void
+	{
+		screenFadeOverlay.reset();
+		remove(mainMenuOverlay, false);
+		add(mainMenuOverlay);
+		mainMenuOverlay.show(true);
+	}
+
+	function fadeScreenToBlack(onComplete:Void->Void):Void
+	{
+		bringToFront(screenFadeOverlay);
+		screenFadeOverlay.fadeToBlack(onComplete);
+	}
+
+	function bringToFront(child:flixel.FlxBasic):Void
+	{
+		remove(child, false);
+		add(child);
 	}
 
 	function updateCalculatorToggleUi():Void
@@ -624,6 +1414,18 @@ class PlayState extends FlxState
 
 	function updateCalculatorToggleInput(mousePos:flixel.math.FlxPoint):Void
 	{
+		if (scanModeOverlay != null && scanModeOverlay.isActive)
+		{
+			calculatorToggleOverlay.alpha += (0 - calculatorToggleOverlay.alpha) * 0.35;
+			return;
+		}
+
+		if (scanModeBlocksPoint(mousePos))
+		{
+			calculatorToggleOverlay.alpha += (0 - calculatorToggleOverlay.alpha) * 0.35;
+			return;
+		}
+
 		if (isDeskItemBeingDragged())
 		{
 			calculatorToggleOverlay.alpha += (0 - calculatorToggleOverlay.alpha) * 0.35;
@@ -698,12 +1500,33 @@ class PlayState extends FlxState
 		var btnH = CALC_BTN_HEIGHT * scale;
 		overlay.setGraphicSize(Std.int(Math.max(1, btnW)), Std.int(Math.max(1, btnH)));
 		overlay.updateHitbox();
+		overlay.color = 0xFF000000;
 		overlay.x = calculatorObj.x + left * scale;
 		overlay.y = calculatorObj.y + top * scale;
 	}
 
+	function fadeCalculatorButtonOverlays(elapsed:Float):Void
+	{
+		for (overlay in calculatorBtnOverlays)
+			overlay.alpha += (0 - overlay.alpha) * Math.min(1.0, elapsed * 12.0);
+	}
+
 	function updateCalculatorButtonInput(mousePos:flixel.math.FlxPoint):Void
 	{
+		if (scanModeOverlay != null && scanModeOverlay.isActive)
+		{
+			for (overlay in calculatorBtnOverlays)
+				overlay.alpha += (0 - overlay.alpha) * 0.35;
+			return;
+		}
+
+		if (scanModeBlocksPoint(mousePos))
+		{
+			for (overlay in calculatorBtnOverlays)
+				overlay.alpha += (0 - overlay.alpha) * 0.35;
+			return;
+		}
+
 		if (isDeskItemBeingDragged())
 		{
 			for (overlay in calculatorBtnOverlays)
@@ -730,6 +1553,16 @@ class PlayState extends FlxState
 	{
 		if (!FlxG.mouse.justPressed)
 			return;
+		if (scanModeOverlay != null && scanModeOverlay.isActive)
+		{
+			calculatorFocused = false;
+			return;
+		}
+		if (scanModeBlocksPoint(mousePos))
+		{
+			calculatorFocused = false;
+			return;
+		}
 		if (isDeskItemBeingDragged())
 		{
 			calculatorFocused = false;
@@ -1113,6 +1946,15 @@ class PlayState extends FlxState
 		if (n == 0)
 			return "0";
 
+		for (precision in [8, 7, 6, 5, 4, 3, 2, 1, 0])
+		{
+			var factor = Math.pow(10, precision);
+			var rounded = Math.round(n * factor) / factor;
+			var s = formatCalculatorNumber(rounded);
+			if (s.length <= CALC_MAX_DISPLAY_CHARS)
+				return s;
+		}
+
 		return formatCompactScientific(n);
 	}
 
@@ -1196,13 +2038,33 @@ class PlayState extends FlxState
 			{
 				clientImg.color = FlxColor.WHITE;
 				clientAnimPhase = 0;
-				clientDialog.startDialog(["Hello!", "How are you?", "Nice weather outside, huh?"]);
+				clientDialog.startScenarioDialog();
 			}
 		}
 	}
 
+	function handleNonPrintableDocumentDrop(doc:DeskDocument):Bool
+	{
+		return false;
+	}
+
 	function handleDocumentDroppedOnPrinter(doc:DeskDocument):Bool
 	{
+		if (Std.downcast(doc, LoanFolderDocument) != null)
+			return false;
+
+		if (Std.downcast(doc, BankDocument) != null)
+			return false;
+
+		if (Std.downcast(doc, JobContractDocument) != null)
+			return false;
+
+		if (Std.downcast(doc, BookDocument) != null)
+			return false;
+
+		if (Std.downcast(doc, PrinterPaperDocument) != null)
+			return false;
+
 		if (!printerStation.canAcceptDocument())
 			return false;
 
@@ -1210,6 +2072,7 @@ class PlayState extends FlxState
 		printerStation.startScan(doc, function()
 		{
 			doc.unlockAfterPrinterScan();
+			printerStation.resetFeedPaperGraphic();
 			printerStation.animatePaperFeed();
 		});
 		return true;
@@ -1223,21 +2086,43 @@ class PlayState extends FlxState
 		if (!shredderStation.canAcceptDocument())
 			return false;
 
-		bringPaperAboveShredder(paper);
+		bringDocumentAboveShredder(paper);
 		return shredderStation.startShred(paper, function()
 		{
 			removePrintedPaper(paper);
 		});
 	}
 
+	function handleBankDocumentDroppedOnShredder(doc:DeskDocument):Bool
+	{
+		var bankDoc = Std.downcast(doc, BankDocument);
+		if (bankDoc == null)
+			return false;
+		if (bankDoc.getVariant() == BankDocumentVariant.LoanDecision)
+			return false;
+		if (!shredderStation.canAcceptDocument())
+			return false;
+
+		bringDocumentAboveShredder(bankDoc);
+		return shredderStation.startShred(bankDoc, function()
+		{
+			removePrintedBankDocument(bankDoc);
+		});
+	}
+
+	function bringDocumentAboveShredder(doc:DeskDocument):Void
+	{
+		if (documentsAbove.members.indexOf(doc) < 0)
+		{
+			if (documentsBelow.members.indexOf(doc) >= 0)
+				documentsBelow.remove(doc, true);
+			documentsAbove.add(doc);
+		}
+	}
+
 	function bringPaperAboveShredder(paper:PrinterPaperDocument):Void
 	{
-		if (documentsAbove.members.indexOf(paper) < 0)
-		{
-			if (documentsBelow.members.indexOf(paper) >= 0)
-				documentsBelow.remove(paper, true);
-			documentsAbove.add(paper);
-		}
+		bringDocumentAboveShredder(paper);
 	}
 
 	function removePrintedPaper(paper:PrinterPaperDocument):Void
@@ -1258,9 +2143,331 @@ class PlayState extends FlxState
 	{
 		if (!printerStation.canAcceptDocument())
 			return false;
+		printerStation.setFeedPaperGraphic(BankDocumentLayouts.DOCUMENT_PATH);
+		printerStation.setTerminalPrintJob(TerminalPrintJob.LoanApplicationForm);
 		monitor.hide();
 		printerStation.animatePaperFeed();
 		return true;
+	}
+
+	function handleMonitorPrintChecklistRequest():Bool
+	{
+		if (!printerStation.canAcceptDocument())
+			return false;
+		printerStation.setFeedPaperGraphic(BankDocumentLayouts.DOCUMENT_PATH);
+		printerStation.setTerminalPrintJob(TerminalPrintJob.LoanChecklist);
+		monitor.hide();
+		printerStation.animatePaperFeed();
+		return true;
+	}
+
+	function handleMonitorClosed():Void
+	{
+		pendingLoanFolderSlide = monitor.consumePendingLoanFolderSlide();
+		pendingAutoPrintLoanForm = monitor.consumePendingAutoPrintLoanForm();
+	}
+
+	function refreshLoanChecklistCompletion():Void
+	{
+		if (loanFolder == null)
+			return;
+
+		var loanId = monitor.getLoanId();
+		var idText = loanId != null ? loanId : "";
+		var completed = LoanChecklistItems.completedFromStored(loanFolder.getStoredDocuments());
+
+		for (doc in loanFolder.getStoredDocuments())
+		{
+			var bankDoc = Std.downcast(doc, BankDocument);
+			if (bankDoc != null && bankDoc.getVariant() == BankDocumentVariant.LoanChecklist)
+			{
+				bankDoc.setLoanId(idText);
+				bankDoc.refreshCompletion(completed);
+			}
+		}
+
+		for (bankDoc in printedBankDocuments)
+		{
+			if (bankDoc.getVariant() != BankDocumentVariant.LoanChecklist)
+				continue;
+			if (bankDoc.isStoredInLoanFolder())
+				continue;
+			bankDoc.setLoanId(idText);
+			bankDoc.refreshCompletion(completed);
+		}
+	}
+
+	function handleMonitorSubmitForApprovalRequest():Bool
+	{
+		if (loanFolder == null || loanFolderSubmitting)
+			return false;
+		if (!loanFolder.hasStoredDocuments())
+			return false;
+		if (!LoanChecklistItems.isComplete(loanFolder.getStoredDocuments()))
+			return false;
+
+		pendingLoanFolderSubmit = true;
+		monitor.hide();
+		return true;
+	}
+
+	function handleLoanFolderSubmit():Void
+	{
+		if (loanFolder == null || loanFolderSubmitting)
+			return;
+		if (!LoanChecklistItems.isComplete(loanFolder.getStoredDocuments()))
+			return;
+
+		loanFolderSubmitting = true;
+
+		var folder = loanFolder;
+		folder.submitAndSlideOut(0.55, function()
+		{
+			finishLoanFolderSubmit(folder);
+		});
+	}
+
+	function finishLoanFolderSubmit(folder:LoanFolderDocument):Void
+	{
+		for (doc in folder.getStoredDocuments())
+		{
+			var bankDoc = Std.downcast(doc, BankDocument);
+			if (bankDoc != null)
+				printedBankDocuments.remove(bankDoc);
+			var paper = Std.downcast(doc, PrinterPaperDocument);
+			if (paper != null)
+				printedPapers.remove(paper);
+		}
+
+		if (documentsAbove.members.indexOf(folder) >= 0)
+			documentsAbove.remove(folder, false);
+		else if (documentsBelow.members.indexOf(folder) >= 0)
+			documentsBelow.remove(folder, false);
+
+		folder.destroyWithStoredDocuments();
+
+		if (LoanFolderDocument.activeFolder == folder)
+			LoanFolderDocument.activeFolder = null;
+		if (loanFolder == folder)
+			loanFolder = null;
+
+		loanFolderSubmitting = false;
+		handleLoanReviewAfterSubmit();
+	}
+
+	function startLoanApplicationReview():Void
+	{
+		if (CitizenRegistry.all.length == 0 || currentScenario == null)
+			return;
+
+		var citizenIdx = currentScenario.citizenIndex;
+		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
+			return;
+
+		var citizen = CitizenRegistry.all[citizenIdx];
+		var data = monitor.getLoanApplicationData();
+		var messages = LoanApplicationValidator.clientFacingErrors(citizen, currentScenario, data);
+		clientDialog.startApplicationReview(messages);
+	}
+
+	function handleLoanReviewAfterSubmit():Void
+	{
+		if (CitizenRegistry.all.length == 0 || currentScenario == null)
+			return;
+
+		var citizenIdx = currentScenario.citizenIndex;
+		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
+			return;
+
+		var citizen = CitizenRegistry.all[citizenIdx];
+		var loanId = monitor.getLoanId();
+		var data = monitor.getLoanApplicationData();
+		var review = LoanApplicationValidator.review(citizen, currentScenario, data, loanId);
+		pendingLoanReview = review;
+		spawnLoanDecisionDocument(review, loanId);
+
+		if (review.approved)
+		{
+			pendingClientAdvance = true;
+			clientDialog.startThanksDialog();
+		}
+	}
+
+	function spawnLoanDecisionDocument(review:LoanReviewResult, ?loanId:String):Void
+	{
+		var doc = new BankDocument(zones, documentsAbove, BankDocumentVariant.LoanDecision);
+		if (CitizenRegistry.all.length > 0)
+		{
+			var citizenIdx = currentScenario != null ? currentScenario.citizenIndex : 0;
+			if (citizenIdx >= 0 && citizenIdx < CitizenRegistry.all.length)
+				doc.setCitizen(CitizenRegistry.all[citizenIdx]);
+		}
+		doc.setDecisionResult(review, loanId);
+		doc.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
+		doc.onDroppedOnShredder = handleBankDocumentDroppedOnShredder;
+
+		var centerX = zones.employerX + zones.employerW * 0.5;
+		var centerY = zones.employerTableY + zones.employerTableH * 0.45;
+		doc.setPosition(centerX - doc.width * 0.5, centerY - doc.height * 0.5);
+		documentsAbove.add(doc);
+		printedBankDocuments.push(doc);
+		moveDocumentToLayer(doc);
+	}
+
+	function advanceToNextClient():Void
+	{
+		pendingClientAdvance = false;
+		pendingLoanReview = null;
+		monitor.resetScreen();
+
+		passport.visible = false;
+		if (documentsAbove.members.indexOf(passport) >= 0)
+			documentsAbove.remove(passport, true);
+		for (idDoc in idDocuments)
+			stashDocumentOffDesk(idDoc);
+		removeLoanFolder();
+		clearAllPrintedBankDocuments();
+
+		currentClientIndex++;
+		if (currentClientIndex >= ClientScenarios.count())
+			currentClientIndex = ClientScenarios.count() - 1;
+
+		applyClientScenario();
+		clientDialog.resetForNewDay();
+		clientDialog.setScenario(currentScenario);
+
+		clientImg.x = -clientImg.width;
+		clientImg.y = clientFinalY;
+		clientImg.color = FlxColor.BLACK;
+		clientAnimPhase = 1;
+		clientAnimTimer = 0;
+		clientBobOffset = 0;
+	}
+
+	function configurePrintedBankDocument(doc:BankDocument, variant:BankDocumentVariant):Void
+	{
+		var loanId = monitor.getLoanId();
+		var idText = loanId != null ? loanId : "";
+		if (CitizenRegistry.all.length > 0)
+		{
+			var citizenIdx = currentScenario != null ? currentScenario.citizenIndex : 0;
+			if (citizenIdx >= 0 && citizenIdx < CitizenRegistry.all.length)
+				doc.setCitizen(CitizenRegistry.all[citizenIdx]);
+		}
+
+		switch (variant)
+		{
+			case BankDocumentVariant.LoanChecklist:
+				var completed:Array<LoanChecklistItem> = loanFolder != null
+					? LoanChecklistItems.completedFromStored(loanFolder.getStoredDocuments())
+					: [];
+				doc.setLoanId(idText);
+				doc.refreshCompletion(completed);
+			case BankDocumentVariant.ApplicationForm:
+				doc.setApplicationData(idText, monitor.getLoanApplicationData());
+			case BankDocumentVariant.LoanDecision:
+		}
+	}
+
+	function spawnPrintedBankDocument(variant:BankDocumentVariant, centerX:Float, centerY:Float, ?dragMouseX:Float, ?dragMouseY:Float):Void
+	{
+		var doc = new BankDocument(zones, documentsAbove, variant);
+		configurePrintedBankDocument(doc, variant);
+		doc.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
+		doc.onDroppedOnShredder = handleBankDocumentDroppedOnShredder;
+		doc.prepareClientHandoff();
+		doc.setPosition(centerX - doc.width * 0.5, centerY - doc.height * 0.5);
+		documentsAbove.add(doc);
+		printedBankDocuments.push(doc);
+		moveDocumentToLayer(doc);
+
+		if (dragMouseX != null && dragMouseY != null)
+			doc.startDragFromExternal(dragMouseX, dragMouseY);
+
+		printerStation.notifyPrintedPaperPickedUp();
+	}
+
+	function removePrintedBankDocument(doc:BankDocument):Void
+	{
+		printedBankDocuments.remove(doc);
+		if (documentsAbove.members.indexOf(doc) >= 0)
+			documentsAbove.remove(doc, true);
+		else if (documentsBelow.members.indexOf(doc) >= 0)
+			documentsBelow.remove(doc, true);
+		doc.destroy();
+	}
+
+	function clearAllPrintedBankDocuments():Void
+	{
+		var docs = printedBankDocuments.copy();
+		for (doc in docs)
+			removePrintedBankDocument(doc);
+	}
+
+	function handleMonitorSlideOutComplete():Void
+	{
+		if (pendingLoanFolderSlide)
+		{
+			pendingLoanFolderSlide = false;
+			spawnLoanFolderSlide();
+		}
+
+		if (pendingAutoPrintLoanForm)
+		{
+			pendingAutoPrintLoanForm = false;
+			tryAutoPrintLoanApplicationForm();
+		}
+
+		if (pendingLoanFolderSubmit)
+		{
+			pendingLoanFolderSubmit = false;
+			handleLoanFolderSubmit();
+		}
+	}
+
+	function tryAutoPrintLoanApplicationForm():Void
+	{
+		if (!printerStation.canAcceptDocument())
+			return;
+
+		printerStation.setFeedPaperGraphic(BankDocumentLayouts.DOCUMENT_PATH);
+		printerStation.setTerminalPrintJob(TerminalPrintJob.LoanApplicationForm);
+		printerStation.animatePaperFeed();
+	}
+
+	function spawnLoanFolderSlide():Void
+	{
+		if (monitor.isActive())
+			return;
+
+		if (loanFolder != null)
+			return;
+
+		loanFolder = new LoanFolderDocument(zones, documentsAbove);
+		LoanFolderDocument.activeFolder = loanFolder;
+		var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
+		loanFolder.cameras = [FlxG.camera];
+		if (lensCam != null)
+			loanFolder.cameras.push(lensCam);
+
+		documentsAbove.add(loanFolder);
+		loanFolder.onStoredDocumentsChanged = refreshLoanChecklistCompletion;
+		loanFolder.tweenSlideInFromEdge(0.55);
+	}
+
+	function removeLoanFolder():Void
+	{
+		if (loanFolder == null)
+			return;
+
+		if (documentsAbove.members.indexOf(loanFolder) >= 0)
+			documentsAbove.remove(loanFolder, true);
+		else if (documentsBelow.members.indexOf(loanFolder) >= 0)
+			documentsBelow.remove(loanFolder, true);
+		loanFolder.destroy();
+		if (LoanFolderDocument.activeFolder == loanFolder)
+			LoanFolderDocument.activeFolder = null;
+		loanFolder = null;
 	}
 
 	function tryPickupPrintedPaper(p:flixel.math.FlxPoint):Void
@@ -1268,13 +2475,22 @@ class PlayState extends FlxState
 		if (!printerStation.tryPickupPrintedPaper(p.x, p.y))
 			return;
 
-		spawnPrintedPaper(printerStation.getPrintedPaperCenterX(), printerStation.getPrintedPaperCenterY(), p.x, p.y);
+		var centerX = printerStation.getPrintedPaperCenterX();
+		var centerY = printerStation.getPrintedPaperCenterY();
+		switch (printerStation.consumeTerminalPrintJob())
+		{
+			case TerminalPrintJob.LoanChecklist:
+				spawnPrintedBankDocument(BankDocumentVariant.LoanChecklist, centerX, centerY, p.x, p.y);
+			case TerminalPrintJob.LoanApplicationForm:
+				spawnPrintedBankDocument(BankDocumentVariant.ApplicationForm, centerX, centerY, p.x, p.y);
+			default:
+				spawnPrintedPaper(centerX, centerY, p.x, p.y);
+		}
 	}
 
 	function spawnPrintedPaper(centerX:Float, centerY:Float, ?dragMouseX:Float, ?dragMouseY:Float):Void
 	{
-		var scannedFrom = printerStation.getLastScannedDocument();
-		printerStation.clearLastScannedDocument();
+		var scannedFrom = printerStation.consumePrintSource();
 		var paper = new PrinterPaperDocument(zones, documentsAbove, scannedFrom);
 		var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
 		paper.cameras = [FlxG.camera];
@@ -1316,8 +2532,259 @@ class PlayState extends FlxState
 
 	function isComputerZoneClick():Bool
 	{
-		var p = FlxG.mouse.getViewPosition();
+		return isComputerZoneAt(FlxG.mouse.getViewPosition());
+	}
+
+	function isComputerZoneAt(p:flixel.math.FlxPoint):Bool
+	{
 		return p.x >= 0 && p.x < zones.leftW && p.y >= zones.computerY && p.y < zones.computerY + zones.computerH;
+	}
+
+	function scanModeBlocksPoint(p:flixel.math.FlxPoint):Bool
+	{
+		return scanModeOverlay != null && scanModeOverlay.isActive && !isScanModePointAllowed(p);
+	}
+
+	function isScanModePointAllowed(p:flixel.math.FlxPoint):Bool
+	{
+		if (scanModeOverlay == null || !scanModeOverlay.isActive)
+			return true;
+
+		if (scanModeOverlay.isPointOnActionableMessage(p))
+			return true;
+
+		if (p.x >= 0 && p.x < zones.leftW && p.y >= 0 && p.y < zones.clientH)
+			return true;
+
+		if (p.x >= 0 && p.x < zones.leftW && p.y >= zones.clientTableY && p.y < zones.clientTableY + zones.clientTableH)
+			return true;
+
+		if (isComputerZoneAt(p))
+			return true;
+
+		if (pointInRect(p, zones.printerX, zones.printerY, zones.printerW, zones.printerH))
+			return true;
+
+		if (pointInRect(p, zones.shredderX, zones.shredderY, zones.shredderW, zones.shredderH))
+			return true;
+
+		if (isPointOnCalculator(p))
+			return true;
+
+		var doc = frontmostDocumentAtPoint(p);
+		if (doc != null && doc.isOnClientOrEmployerTable())
+			return true;
+
+		return false;
+	}
+
+	function pointInRect(p:flixel.math.FlxPoint, x:Float, y:Float, w:Float, h:Float):Bool
+	{
+		return p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
+	}
+
+	function updateScanModeUi(p:flixel.math.FlxPoint, elapsed:Float):Void
+	{
+		if (scanModeOverlay == null)
+			return;
+
+		scanModeOverlay.syncScreenSize();
+		scanModeOverlay.setClientArea(zones.leftW, zones.clientH);
+
+		if (beginningDayOverlay.isShowing || mainMenuOverlay.isShowing || monitor.isActive() || clientAnimPhase != 0)
+		{
+			scanModeOverlay.setActive(false);
+			scanClickPending = false;
+			return;
+		}
+
+		var showHint = clientDialog.shouldShowScanHint();
+		if (scanModeOverlay.isActive && !showHint)
+			scanModeOverlay.setActive(false);
+
+		handleScanDoubleClick(p, elapsed, showHint);
+
+		if (showHint || scanModeOverlay.isActive)
+		{
+			remove(scanModeOverlay, false);
+			add(scanModeOverlay);
+			if (scanModeOverlay.isActive && showHint)
+			{
+				remove(clientDialog, false);
+				add(clientDialog);
+			}
+		}
+
+		if (FlxG.keys.justPressed.SPACE && (scanModeOverlay.isActive || showHint))
+		{
+			if (scanModeOverlay.isActive)
+				scanModeOverlay.setActive(false);
+			else
+				enterScanMode();
+		}
+
+		if (scanModeOverlay.isActive && scanModeOverlay.handleActionClick(p))
+			scanSelectionConsumed = true;
+		else if (scanModeOverlay.isActive && FlxG.keys.justPressed.ENTER && scanModeOverlay.tryConfirmAction())
+			scanSelectionConsumed = true;
+		else if (scanModeOverlay.isActive && scanModeOverlay.handleScanSelection(p, resolveScanTargetAt))
+			scanSelectionConsumed = true;
+	}
+
+	function handleScanDoubleClick(p:flixel.math.FlxPoint, elapsed:Float, showHint:Bool):Void
+	{
+		if (scanClickPending)
+		{
+			scanClickTimer += elapsed;
+			if (scanClickTimer > SCAN_DOUBLE_CLICK_TIME)
+				scanClickPending = false;
+		}
+
+		if (!showHint || scanModeOverlay.isActive)
+		{
+			scanClickPending = false;
+			return;
+		}
+
+		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
+			|| ShiftPauseOverlay.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+			return;
+
+		if (clientDialog.isPointOnChoiceControls(p))
+			return;
+
+		if (!FlxG.mouse.justPressed)
+			return;
+
+		var bounds = resolveScanTargetAt(p);
+		var isDouble = scanClickPending
+			&& scanClickTimer <= SCAN_DOUBLE_CLICK_TIME
+			&& Math.abs(p.x - scanClickX) <= SCAN_DOUBLE_CLICK_DIST
+			&& Math.abs(p.y - scanClickY) <= SCAN_DOUBLE_CLICK_DIST;
+
+		if (isDouble)
+		{
+			scanClickPending = false;
+			if (bounds == null)
+				return;
+
+			enterScanMode();
+			scanModeOverlay.showSelection(bounds);
+			ScanModeOverlay.suppressDocumentPress = true;
+			scanSelectionConsumed = true;
+			return;
+		}
+
+		if (bounds != null)
+		{
+			scanClickPending = true;
+			scanClickTimer = 0;
+			scanClickX = p.x;
+			scanClickY = p.y;
+		}
+		else
+			scanClickPending = false;
+	}
+
+	function resolveScanTargetAt(p:flixel.math.FlxPoint):Null<ScanBounds>
+	{
+		var doc = frontmostDocumentAtPoint(p);
+		if (doc != null && doc.isOnClientOrEmployerTable())
+		{
+			var docBounds = doc.resolveScanBoundsAt(p);
+			if (docBounds != null)
+				return docBounds;
+		}
+
+		if (isPointOnCalculator(p))
+			return spriteScanBounds(calculatorObj);
+
+		if (pointInRect(p, zones.printerX, zones.printerY, zones.printerW, zones.printerH))
+			return {
+				x: zones.printerX,
+				y: zones.printerY,
+				w: zones.printerW,
+				h: zones.printerH
+			};
+
+		if (pointInRect(p, zones.shredderX, zones.shredderY, zones.shredderW, zones.shredderH))
+			return {
+				x: zones.shredderX,
+				y: zones.shredderY,
+				w: zones.shredderW,
+				h: zones.shredderH
+			};
+
+		if (clientImg.visible && clientImg.overlapsPoint(p))
+			return taggedSpriteScanBounds(clientImg, BookScanActions.CLIENT_TAG);
+
+		if (p.x >= 0 && p.x < zones.leftW && p.y >= zones.clientTableY && p.y < zones.clientTableY + zones.clientTableH)
+			return {
+				x: 0,
+				y: zones.clientTableY,
+				w: zones.leftW,
+				h: zones.clientTableH
+			};
+
+		if (isComputerZoneAt(p))
+			return {
+				x: 0,
+				y: zones.computerY,
+				w: zones.leftW,
+				h: zones.computerH
+			};
+
+		if (p.x >= 0 && p.x < zones.leftW && p.y >= 0 && p.y < zones.clientH)
+			return {
+				x: 0,
+				y: 0,
+				w: zones.leftW,
+				h: zones.clientH
+			};
+
+		return null;
+	}
+
+	function spriteScanBounds(sprite:FlxSprite):ScanBounds
+	{
+		return taggedSpriteScanBounds(sprite, null);
+	}
+
+	function taggedSpriteScanBounds(sprite:FlxSprite, tag:Null<String>):ScanBounds
+	{
+		return {
+			x: sprite.x,
+			y: sprite.y,
+			w: sprite.width,
+			h: sprite.height,
+			tag: tag
+		};
+	}
+
+	function enterScanMode():Void
+	{
+		cancelActiveDocumentDrags();
+		scanModeOverlay.setActive(true);
+		remove(scanModeOverlay, false);
+		add(scanModeOverlay);
+	}
+
+	function cancelActiveDocumentDrags():Void
+	{
+		cancelDragsInGroup(documentsAbove);
+		cancelDragsInGroup(documentsBelow);
+	}
+
+	function cancelDragsInGroup(group:FlxGroup):Void
+	{
+		for (member in group.members)
+		{
+			if (member == null)
+				continue;
+			var doc = Std.downcast(member, DeskDocument);
+			if (doc != null)
+				doc.cancelDrag();
+		}
 	}
 
 	function isDocumentAtMouse():Bool
@@ -1346,6 +2813,36 @@ class PlayState extends FlxState
 		return frontmostDocumentAtPoint(p) == candidate;
 	}
 
+	function canStartDocumentDrag(candidate:DeskDocument, p:flixel.math.FlxPoint):Bool
+	{
+		if (candidate != magnifyingGlass && magnifierHitsPoint(p))
+			return false;
+		if (isPointOnCalculator(p))
+			return false;
+		if (candidate.isStoredInLoanFolder())
+			return false;
+
+		if (documentsBelow.members.indexOf(candidate) >= 0 && isAboveDrawLayerBlockingPoint(p))
+			return false;
+
+		var folder = Std.downcast(candidate, LoanFolderDocument);
+		if (folder != null && !folder.canBeginDragAt(p))
+			return false;
+
+		var book = Std.downcast(candidate, BookDocument);
+		if (book != null && !book.canBeginDragAt(p))
+			return false;
+
+		return isTopmostDocumentAtPoint(candidate, p);
+	}
+
+	function magnifierHitsPoint(p:flixel.math.FlxPoint):Bool
+	{
+		if (magnifyingGlass == null || !magnifyingGlass.visible || !magnifyingGlass.hitsPoint(p))
+			return false;
+		return frontmostDocumentAtPoint(p) == magnifyingGlass;
+	}
+
 	function frontmostDocumentAtPoint(p:flixel.math.FlxPoint):DeskDocument
 	{
 		var doc = frontmostDocumentInGroupAtPoint(documentsAbove, p);
@@ -1363,7 +2860,7 @@ class PlayState extends FlxState
 			if (member == null)
 				continue;
 			var doc:DeskDocument = Std.downcast(member, DeskDocument);
-			if (doc == null || !doc.visible || !doc.hitsPoint(p))
+			if (doc == null || !doc.visible || doc.isStoredInLoanFolder() || !doc.hitsPoint(p))
 				continue;
 			return doc;
 		}

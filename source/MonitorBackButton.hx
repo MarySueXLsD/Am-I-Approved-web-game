@@ -17,6 +17,7 @@ class MonitorBackButton
 	var btnH = 0;
 	var fontSize = 12;
 	var hovered = false;
+	var enabled = true;
 	var _visible = false;
 
 	public var visible(get, set):Bool;
@@ -53,7 +54,7 @@ class MonitorBackButton
 			label.setFormat(null, fontSize, MonitorScreenUi.GREEN, "center");
 			label.text = buttonText;
 			label.scale.set(1, 1);
-			label.color = MonitorScreenUi.GREEN;
+			applyLabelColor(false);
 		}
 	}
 
@@ -81,10 +82,33 @@ class MonitorBackButton
 		sprite.dirty = true;
 	}
 
+	public function setEnabled(value:Bool):Void
+	{
+		if (enabled == value)
+			return;
+		enabled = value;
+		hovered = false;
+		drawButton(false);
+		applyLabelColor(false);
+	}
+
+	public function isEnabled():Bool
+	{
+		return enabled;
+	}
+
 	public function updateHover(mx:Float, my:Float):Void
 	{
 		if (!_visible)
 			return;
+
+		if (!enabled)
+		{
+			hovered = false;
+			drawButton(false);
+			applyLabelColor(false);
+			return;
+		}
 
 		var over = hit.overlapsPoint(new FlxPoint(mx, my));
 		if (over != hovered)
@@ -93,7 +117,7 @@ class MonitorBackButton
 			drawButton(over);
 		}
 
-		label.color = over ? MonitorScreenUi.GREEN_BRIGHT : MonitorScreenUi.GREEN;
+		applyLabelColor(over);
 
 		var targetScale = over ? 1.06 : 1.0;
 		if (Math.abs(label.scale.x - targetScale) > 0.01)
@@ -102,6 +126,14 @@ class MonitorBackButton
 				hoverTween.cancel();
 			hoverTween = FlxTween.tween(label.scale, {x: targetScale, y: targetScale}, 0.12, {ease: FlxEase.quadOut});
 		}
+	}
+
+	function applyLabelColor(over:Bool):Void
+	{
+		if (!enabled)
+			label.color = MonitorScreenUi.GREEN_DIM;
+		else
+			label.color = over ? MonitorScreenUi.GREEN_BRIGHT : MonitorScreenUi.GREEN;
 	}
 
 	function get_visible():Bool

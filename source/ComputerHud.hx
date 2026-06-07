@@ -1,5 +1,6 @@
 package;
 
+import flixel.FlxCamera;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.group.FlxGroup;
@@ -9,14 +10,9 @@ import openfl.geom.Rectangle;
 
 class ComputerHud extends FlxGroup
 {
-	static inline var START_HOUR = 8;
-	static inline var END_HOUR = 16;
-	static inline var DAY_DURATION_SECONDS = 600.0;
 	static inline var BLINK_INTERVAL_SECONDS = 1.2;
-	static inline var MINUTE_STEP = 10;
 
 	var timeLabel:FlxText;
-	var elapsedClock = 0.0;
 	var blinkTimer = 0.0;
 	var colonVisible = true;
 
@@ -56,9 +52,10 @@ class ComputerHud extends FlxGroup
 	{
 		super.update(elapsed);
 
-		elapsedClock += elapsed;
-		if (elapsedClock > DAY_DURATION_SECONDS)
-			elapsedClock = DAY_DURATION_SECONDS;
+		if (MonitorOverlay.pausesDialogue() || ShiftPauseOverlay.pausesDialogue())
+			return;
+
+		GameClock.advance(elapsed);
 
 		blinkTimer += elapsed;
 		if (blinkTimer >= BLINK_INTERVAL_SECONDS)
@@ -98,20 +95,7 @@ class ComputerHud extends FlxGroup
 		if (timeLabel == null)
 			return;
 
-		var dayMinutes = (END_HOUR - START_HOUR) * 60;
-		var progressedRaw = dayMinutes * (elapsedClock / DAY_DURATION_SECONDS);
-		var progressedMinutes = Std.int(Math.floor(progressedRaw / MINUTE_STEP) * MINUTE_STEP);
-		var totalMinutes = START_HOUR * 60 + progressedMinutes;
-		var hour = Std.int(totalMinutes / 60);
-		var minute = totalMinutes % 60;
-
-		var sep = colonVisible ? ":" : " ";
-		timeLabel.text = twoDigits(hour) + sep + twoDigits(minute);
-	}
-
-	function twoDigits(v:Int):String
-	{
-		return v < 10 ? "0" + Std.string(v) : Std.string(v);
+		timeLabel.text = GameClock.formatHudTime(colonVisible);
 	}
 
 	function drawBorder(sprite:FlxSprite, width:Int, height:Int, color:Int, size:Int):Void
@@ -121,5 +105,14 @@ class ComputerHud extends FlxGroup
 		sprite.pixels.fillRect(new Rectangle(0, 0, size, height), color);
 		sprite.pixels.fillRect(new Rectangle(width - size, 0, size, height), color);
 		sprite.dirty = true;
+	}
+
+	public function setCameras(cams:Array<FlxCamera>):Void
+	{
+		for (member in members)
+		{
+			if (member != null)
+				member.cameras = cams;
+		}
 	}
 }

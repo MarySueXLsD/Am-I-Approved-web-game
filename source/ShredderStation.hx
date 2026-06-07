@@ -30,7 +30,7 @@ class ShredderStation extends FlxGroup
 	var redGlow:FlxSprite;
 	var redBorder:FlxSprite;
 	var redLed:FlxSprite;
-	var shreddingDoc:PrinterPaperDocument;
+	var shreddingDoc:DeskDocument;
 	var shredTween:FlxTween;
 	var isShredding = false;
 	var blinkTimer = 0.0;
@@ -67,6 +67,20 @@ class ShredderStation extends FlxGroup
 		return !isShredding;
 	}
 
+	public function cancelActiveShred():DeskDocument
+	{
+		if (shredTween != null)
+		{
+			shredTween.cancel();
+			shredTween = null;
+		}
+
+		var doc = shreddingDoc;
+		shreddingDoc = null;
+		isShredding = false;
+		return doc;
+	}
+
 	public function getBodyX():Float
 	{
 		return body.x;
@@ -87,7 +101,7 @@ class ShredderStation extends FlxGroup
 		return body.height;
 	}
 
-	public function startShred(doc:PrinterPaperDocument, onComplete:Void->Void):Bool
+	public function startShred(doc:DeskDocument, onComplete:Void->Void):Bool
 	{
 		if (!canAcceptDocument())
 			return false;

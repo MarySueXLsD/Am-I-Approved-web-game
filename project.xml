@@ -10,6 +10,7 @@
 	<window if="html5" resizable="true" />
 
 	<source path="source" />
+	<template path="templates" if="html5" />
 
 	<haxelib name="flixel" />
 	<haxedef name="FLX_NO_DEBUG" />

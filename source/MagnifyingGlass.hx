@@ -84,16 +84,16 @@ class MagnifyingGlass extends DeskDocument
 		coverCam.bgColor = 0x00000000;
 		FlxG.cameras.add(coverCam, false);
 
+		lensCam.visible = false;
+		coverCam.visible = false;
+
 		lensMask = new Shape();
 	}
 
 	public function setHidden(hidden:Bool):Void
 	{
 		forceHidden = hidden;
-		if (lensCam != null)
-			lensCam.visible = !hidden;
-		if (coverCam != null)
-			coverCam.visible = !hidden;
+		syncLens();
 	}
 
 	override public function hitsPoint(point:FlxPoint):Bool
@@ -123,6 +123,52 @@ class MagnifyingGlass extends DeskDocument
 		return dx * dx + dy * dy <= sr * sr;
 	}
 
+	function glassCenterWorld():{x:Float, y:Float}
+	{
+		var s = Math.abs(scale.x);
+		var relCx = GLASS_CX * s;
+		var relCy = GLASS_CY * s;
+		var hw = width * 0.5;
+		var hh = height * 0.5;
+		var rad = angle * Math.PI / 180.0;
+		var cosA = Math.cos(rad);
+		var sinA = Math.sin(rad);
+		return {
+			x: x + (relCx - hw) * cosA - (relCy - hh) * sinA + hw,
+			y: y + (relCx - hw) * sinA + (relCy - hh) * cosA + hh
+		};
+	}
+
+	override public function isOpenOnEmployerTable():Bool
+	{
+		if (!isOpen)
+			return false;
+		if (dragging)
+		{
+			var mouse = FlxG.mouse.getViewPosition();
+			return cursorInEmployerTable(mouse.x, mouse.y);
+		}
+		return activeZone == EmployerTable;
+	}
+
+	override function shouldOpenOnEmployerDrop():Bool
+	{
+		var mouse = FlxG.mouse.getViewPosition();
+		return cursorInEmployerTable(mouse.x, mouse.y);
+	}
+
+	override function shouldSnapToEmployerTableOpenOnDrop():Bool
+	{
+		return false;
+	}
+
+	override function getDocumentZone()
+	{
+		if (dragging)
+			return getZoneAtCursor();
+		return super.getDocumentZone();
+	}
+
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
@@ -134,6 +180,23 @@ class MagnifyingGlass extends DeskDocument
 	{
 		if (lensCam == null)
 			return;
+
+		if (DeskDocument.onLensCamerasSync != null && DeskDocument.lensSyncGroups != null)
+		{
+			for (group in DeskDocument.lensSyncGroups)
+			{
+				for (member in group.members)
+				{
+					if (member == null || member == this)
+						continue;
+					var doc = Std.downcast(member, DeskDocument);
+					if (doc == null || Std.downcast(doc, Passport) != null)
+						continue;
+					DeskDocument.onLensCamerasSync(doc);
+				}
+			}
+			return;
+		}
 
 		var myIndex = layer.members.indexOf(this);
 		if (myIndex < 0)
@@ -152,8 +215,8 @@ class MagnifyingGlass extends DeskDocument
 			if (Std.downcast(doc, Passport) != null)
 				continue;
 
-			var shouldZoom = i < myIndex && doc.isOpen;
-			var shouldCover = !shouldZoom;
+			var shouldZoom = DeskDocument.shouldUseLensMagnifier(doc, i, myIndex);
+			var shouldCover = !shouldZoom && DeskDocument.usesMagnifierCoverLayer(doc);
 
 			var cams = doc.cameras;
 			var hasLens = cams.indexOf(lensCam) >= 0;
@@ -211,6 +274,9 @@ class MagnifyingGlass extends DeskDocument
 		lensCam.scroll.y = gcy - d / (2.0 * ZOOM);
 
 		updateMask();
+
+		if (DeskDocument.onDeskPropsLensSync != null)
+			DeskDocument.onDeskPropsLensSync();
 	}
 
 	function updateMask():Void
