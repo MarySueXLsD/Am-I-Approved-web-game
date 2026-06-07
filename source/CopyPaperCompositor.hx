@@ -117,12 +117,8 @@ class CopyPaperCompositor
 
 		var drawW = Std.int(doc.width * scale);
 		var drawH = Std.int(doc.height * scale);
-		var drawX = isHorizontal
-			? Std.int((dest.width - drawW) * 0.5)
-			: Std.int(printRect.x + (printRect.width - drawW) * 0.5);
-		var drawY = isHorizontal
-			? Std.int((dest.height - drawH) * 0.5)
-			: Std.int(printRect.y + (printRect.height - drawH) * 0.5);
+		var drawX = Std.int((dest.width - drawW) * 0.5);
+		var drawY = Std.int((dest.height - drawH) * 0.5);
 		var placement = new Rectangle(drawX, drawY, drawW, drawH);
 
 		var scaled = new BitmapData(drawW, drawH, true, 0x00000000);
@@ -144,6 +140,44 @@ class CopyPaperCompositor
 		}
 
 		return placement;
+	}
+
+	public static function buildGrayEmblem(outW:Int, outH:Int):BitmapData
+	{
+		return buildGrayEmblemFromPath("static/lorian_emblem.png", outW, outH);
+	}
+
+	public static function buildGrayEmblemGraphic(path:String):BitmapData
+	{
+		var src = Assets.getBitmapData(path);
+		var result = new BitmapData(src.width, src.height, true, 0x00000000);
+		for (py in 0...src.height)
+		{
+			for (px in 0...src.width)
+				result.setPixel32(px, py, toPhotocopyTone(src.getPixel32(px, py)));
+		}
+		return result;
+	}
+
+	public static function buildGrayEmblemFromPath(path:String, outW:Int, outH:Int):BitmapData
+	{
+		if (outW <= 0 || outH <= 0)
+			return new BitmapData(1, 1, true, 0x00000000);
+
+		var src = Assets.getBitmapData(path);
+		var scaled = new BitmapData(outW, outH, true, 0x00000000);
+		var matrix = new Matrix(outW / src.width, 0, 0, outH / src.height, 0, 0);
+		scaled.draw(src, matrix);
+
+		var result = new BitmapData(outW, outH, true, 0x00000000);
+		for (py in 0...outH)
+		{
+			for (px in 0...outW)
+				result.setPixel32(px, py, toPhotocopyTone(scaled.getPixel32(px, py)));
+		}
+
+		scaled.dispose();
+		return result;
 	}
 
 	static function toPhotocopyTone(argb:Int):Int

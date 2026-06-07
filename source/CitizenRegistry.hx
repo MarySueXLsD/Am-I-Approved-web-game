@@ -247,7 +247,7 @@ class CitizenRegistry
 
 	public static function search(query:String):Array<Citizen>
 	{
-		var q = query.toLowerCase().split(" ").join("");
+		var q = normalizeSearch(query);
 		if (q.length == 0)
 			return all;
 
@@ -255,6 +255,81 @@ class CitizenRegistry
 		{
 			return searchHaystack(c).indexOf(q) >= 0;
 		});
+	}
+
+	public static function nationalIdSuggestionLine(c:Citizen):String
+	{
+		return '${c.firstName} ${c.lastName} - ${c.nationalId}';
+	}
+
+	public static function nationalIdSuggestions(query:String, ?limit:Int = 5):Array<Citizen>
+	{
+		var q = normalizeSearch(query);
+		if (q.length == 0)
+			return [];
+
+		var ranked:Array<{c:Citizen, score:Int}> = [];
+		for (c in all)
+		{
+			var id = normalizeSearch(c.nationalId);
+			if (id.length == 0)
+				continue;
+
+			var score = -1;
+			var idPos = id.indexOf(q);
+			if (idPos == 0)
+				score = 300 - id.length;
+			else if (idPos > 0)
+				score = 200 - idPos - id.length;
+			else
+			{
+				var fullName = normalizeSearch(c.firstName + c.lastName);
+				var first = normalizeSearch(c.firstName);
+				var last = normalizeSearch(c.lastName);
+				var namePos = fullName.indexOf(q);
+				if (namePos == 0)
+					score = 280 - fullName.length;
+				else if (namePos > 0)
+					score = 180 - namePos;
+				else if (first.indexOf(q) == 0)
+					score = 260 - first.length;
+				else if (last.indexOf(q) == 0)
+					score = 240 - last.length;
+				else if (fullName.indexOf(q) > 0)
+					score = 160;
+				else
+				{
+					var hay = searchHaystack(c);
+					var hayPos = hay.indexOf(q);
+					if (hayPos >= 0)
+						score = 100 - hayPos;
+				}
+			}
+
+			if (score >= 0)
+				ranked.push({c: c, score: score});
+		}
+
+		ranked.sort(function(a, b)
+		{
+			if (a.score != b.score)
+				return b.score - a.score;
+			return a.c.nationalId < b.c.nationalId ? -1 : (a.c.nationalId > b.c.nationalId ? 1 : 0);
+		});
+
+		var out:Array<Citizen> = [];
+		for (entry in ranked)
+		{
+			out.push(entry.c);
+			if (out.length >= limit)
+				break;
+		}
+		return out;
+	}
+
+	static function normalizeSearch(query:String):String
+	{
+		return query.toLowerCase().split(" ").join("");
 	}
 
 	static function searchHaystack(c:Citizen):String
@@ -276,6 +351,16 @@ class CitizenRegistry
 			+ c.phone
 			+ flags
 		).toLowerCase().split(" ").join("");
+	}
+
+	public static function indexOf(c:Citizen):Int
+	{
+		for (i in 0...all.length)
+		{
+			if (all[i] == c)
+				return i;
+		}
+		return -1;
 	}
 
 	public static function displayName(c:Citizen):String
@@ -350,13 +435,17 @@ class CitizenRegistry
 		var dependentsChoices = ["1", "2", "3", "4", "5", "No data"];
 
 		return [
-			Single({path: "registryId", label: "Registry ID", value: c.registryId}),
 			Pair(
-				{path: "passportId", label: "Passport ID", value: c.passportId},
-				{path: "nationalId", label: "National ID", value: c.nationalId}
+				{path: "firstName", label: "Name", value: c.firstName, required: true},
+				{path: "lastName", label: "Surname", value: c.lastName, required: true}
+			),
+			Single({path: "registryId", label: "Registry ID", value: c.registryId, required: true}),
+			Pair(
+				{path: "passportId", label: "Passport ID", value: c.passportId, required: true},
+				{path: "nationalId", label: "National ID", value: c.nationalId, required: true}
 			),
 			Pair(
-				{path: "taxId", label: "Tax ID", value: c.taxId},
+				{path: "taxId", label: "Tax ID", value: c.taxId, required: true},
 				{path: "passportName", label: "Passport Name", value: c.passportName}
 			),
 			Pair(
@@ -373,7 +462,7 @@ class CitizenRegistry
 				{path: "dependents", label: "Dependents", value: c.dependents, choices: dependentsChoices}
 			),
 			Pair(
-				{path: "averageAnnualSalary", label: "Annual Salary", value: Std.string(c.averageAnnualSalary), digitsOnly: true},
+				{path: "averageAnnualSalary", label: "Annual Salary", value: Std.string(c.averageAnnualSalary), digitsOnly: true, allowDecimal: true},
 				{path: "salaryCurrency", label: "Salary Currency", value: c.salaryCurrency, choices: currencyChoices}
 			),
 			Pair(
@@ -498,8 +587,8 @@ class CitizenRegistry
 			case "nationality": c.nationality = value;
 			case "occupation": c.occupation = value;
 			case "averageAnnualSalary":
-				var salary = Std.parseInt(value);
-				c.averageAnnualSalary = salary != null ? salary : 0;
+				var salary = Std.parseFloat(StringTools.trim(value));
+				c.averageAnnualSalary = salary != null ? Math.round(salary) : 0;
 			case "salaryCurrency": c.salaryCurrency = value;
 			case "address.street": c.address.street = value;
 			case "address.city": c.address.city = value;

@@ -7,6 +7,14 @@ import flixel.text.FlxText;
 import openfl.geom.Rectangle;
 import openfl.ui.Keyboard;
 
+enum MonitorDialogMode
+{
+	None;
+	Confirm;
+	Warning;
+	Success;
+}
+
 class MonitorConfirmDialog extends FlxGroup
 {
 	var overlay:FlxSprite;
@@ -21,6 +29,11 @@ class MonitorConfirmDialog extends FlxGroup
 	var fontSize = 12;
 	var onConfirm:Void->Void;
 	var onCancel:Void->Void;
+	var dialogMode:MonitorDialogMode = None;
+	var storedPropertyLabel = "";
+	var storedOldValue = "";
+	var storedNewValue = "";
+	var storedMessage = "";
 
 	public function new()
 	{
@@ -54,6 +67,57 @@ class MonitorConfirmDialog extends FlxGroup
 	{
 		onConfirm = confirm;
 		onCancel = cancel;
+		dialogMode = Confirm;
+		storedPropertyLabel = propertyLabel;
+		storedOldValue = oldValue;
+		storedNewValue = newValue;
+		layoutConfirm(areaX, areaY, areaW, areaH);
+		cancelBtn.visible = true;
+		cancelLabel.visible = true;
+		visible = true;
+	}
+
+	public function showWarning(areaX:Float, areaY:Float, areaW:Float, areaH:Float, warningText:String,
+			dismiss:Void->Void):Void
+	{
+		onConfirm = dismiss;
+		onCancel = null;
+		dialogMode = Warning;
+		storedMessage = warningText;
+		layoutWarning(areaX, areaY, areaW, areaH);
+		visible = true;
+	}
+
+	public function showSuccess(areaX:Float, areaY:Float, areaW:Float, areaH:Float, successText:String,
+			dismiss:Void->Void):Void
+	{
+		onConfirm = dismiss;
+		onCancel = null;
+		dialogMode = Success;
+		storedMessage = successText;
+		layoutSuccess(areaX, areaY, areaW, areaH);
+		visible = true;
+	}
+
+	public function syncBounds(areaX:Float, areaY:Float, areaW:Float, areaH:Float):Void
+	{
+		if (!visible)
+			return;
+
+		switch (dialogMode)
+		{
+			case Confirm:
+				layoutConfirm(areaX, areaY, areaW, areaH);
+			case Warning:
+				layoutWarning(areaX, areaY, areaW, areaH);
+			case Success:
+				layoutSuccess(areaX, areaY, areaW, areaH);
+			default:
+		}
+	}
+
+	function layoutConfirm(areaX:Float, areaY:Float, areaW:Float, areaH:Float):Void
+	{
 		fontSize = Std.int(Math.max(11, areaH / 28));
 		btnH = fontSize + 10;
 		btnW = Std.int(Math.max(72, areaW * 0.28));
@@ -74,7 +138,7 @@ class MonitorConfirmDialog extends FlxGroup
 
 		var pad = 10;
 		var msgW = panelW - pad * 2;
-		message.text = 'Are you sure you want to change ${propertyLabel}\nfrom "${oldValue}"\nto "${newValue}"?';
+		message.text = 'Are you sure you want to change ${storedPropertyLabel}\nfrom "${storedOldValue}"\nto "${storedNewValue}"?';
 		message.setFormat(null, fontSize, MonitorScreenUi.GREEN, "center");
 		message.fieldWidth = msgW;
 		message.scale.set(1, 1);
@@ -87,15 +151,10 @@ class MonitorConfirmDialog extends FlxGroup
 
 		layoutBtn(confirmBtn, confirmLabel, btnStartX, btnY, btnW, btnH, "CONFIRM");
 		layoutBtn(cancelBtn, cancelLabel, btnStartX + btnW + gap, btnY, btnW, btnH, "CANCEL");
-
-		visible = true;
 	}
 
-	public function showWarning(areaX:Float, areaY:Float, areaW:Float, areaH:Float, warningText:String,
-			dismiss:Void->Void):Void
+	function layoutWarning(areaX:Float, areaY:Float, areaW:Float, areaH:Float):Void
 	{
-		onConfirm = dismiss;
-		onCancel = null;
 		fontSize = Std.int(Math.max(11, areaH / 28));
 		btnH = fontSize + 10;
 		btnW = Std.int(Math.max(72, areaW * 0.28));
@@ -116,7 +175,7 @@ class MonitorConfirmDialog extends FlxGroup
 
 		var pad = 10;
 		var msgW = panelW - pad * 2;
-		message.text = warningText;
+		message.text = storedMessage;
 		message.setFormat(null, fontSize, MonitorScreenUi.GREEN, "center");
 		message.fieldWidth = msgW;
 		message.scale.set(1, 1);
@@ -128,8 +187,42 @@ class MonitorConfirmDialog extends FlxGroup
 		layoutBtn(confirmBtn, confirmLabel, btnStartX, btnY, btnW, btnH, "OK");
 		cancelBtn.visible = false;
 		cancelLabel.visible = false;
+	}
 
-		visible = true;
+	function layoutSuccess(areaX:Float, areaY:Float, areaW:Float, areaH:Float):Void
+	{
+		fontSize = Std.int(Math.max(11, areaH / 28));
+		btnH = fontSize + 10;
+		btnW = Std.int(Math.max(72, areaW * 0.28));
+
+		overlay.setPosition(areaX, areaY);
+		overlay.makeGraphic(Std.int(areaW), Std.int(areaH), 0xAA000000, true);
+		overlay.updateHitbox();
+
+		var panelW = Std.int(Math.min(areaW - 16, 380));
+		var panelH = Std.int(Math.min(areaH - 16, 165));
+		var panelX = areaX + (areaW - panelW) * 0.5;
+		var panelY = areaY + (areaH - panelH) * 0.5;
+
+		panel.setPosition(panelX, panelY);
+		panel.makeGraphic(panelW, panelH, 0xFF0A120E, true);
+		drawRectBorder(panel, panelW, panelH, MonitorScreenUi.GREEN_BRIGHT, 1);
+		panel.updateHitbox();
+
+		var pad = 10;
+		var msgW = panelW - pad * 2;
+		message.text = "SUCCESS\n\n" + storedMessage;
+		message.setFormat(null, fontSize, MonitorScreenUi.GREEN_BRIGHT, "center");
+		message.fieldWidth = msgW;
+		message.scale.set(1, 1);
+		message.setPosition(panelX + pad, panelY + pad);
+
+		var btnY = panelY + panelH - pad - btnH;
+		var btnStartX = panelX + (panelW - btnW) * 0.5;
+
+		layoutBtn(confirmBtn, confirmLabel, btnStartX, btnY, btnW, btnH, "OK");
+		cancelBtn.visible = false;
+		cancelLabel.visible = false;
 	}
 
 	public function handleKey(keyCode:Int):Bool
@@ -187,6 +280,7 @@ class MonitorConfirmDialog extends FlxGroup
 	public function close():Void
 	{
 		visible = false;
+		dialogMode = None;
 		onConfirm = null;
 		onCancel = null;
 		cancelBtn.visible = true;

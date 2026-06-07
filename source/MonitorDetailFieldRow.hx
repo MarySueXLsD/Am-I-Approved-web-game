@@ -1,5 +1,6 @@
 package;
 
+import StringTools;
 import flixel.FlxSprite;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
@@ -26,7 +27,9 @@ class MonitorDetailFieldRow
 	var lastIsDropdown = false;
 	var choices:Array<String> = [];
 	public var digitsOnly:Bool = false;
+	public var allowDecimal:Bool = false;
 	public var dateField:Bool = false;
+	public var readOnly:Bool = false;
 
 	public function new()
 	{
@@ -43,22 +46,25 @@ class MonitorDetailFieldRow
 	}
 
 	public function setup(fieldPath:String, label:String, value:String, ?fieldChoices:Array<String>,
-			?isDigitsOnly:Bool, ?isDateField:Bool):Void
+			?isDigitsOnly:Bool, ?isDateField:Bool, ?isRequired:Bool, ?isReadOnly:Bool, ?decimalAllowed:Bool):Void
 	{
 		var newChoices = fieldChoices != null ? fieldChoices : [];
 		digitsOnly = isDigitsOnly == true;
+		allowDecimal = decimalAllowed == true;
 		dateField = isDateField == true;
+		readOnly = isReadOnly == true;
+		var displayLabel = isRequired == true ? '$label *' : label;
 		if (path == fieldPath)
 		{
-			if (draft == saved || newChoices.length > 0)
+			if (draft == saved)
 				draft = value;
 			saved = value;
-			fieldLabel = label;
+			fieldLabel = displayLabel;
 			choices = newChoices;
 			return;
 		}
 		path = fieldPath;
-		fieldLabel = label;
+		fieldLabel = displayLabel;
 		draft = value;
 		saved = value;
 		choices = newChoices;
@@ -108,6 +114,54 @@ class MonitorDetailFieldRow
 	public function hasChanges():Bool
 	{
 		return draft != saved;
+	}
+
+	public static function acceptsNumericChar(code:Int, draft:String, allowDecimal:Bool):Bool
+	{
+		if (code >= 48 && code <= 57)
+			return true;
+		if (allowDecimal && code == 46)
+			return draft.indexOf(".") < 0;
+		return false;
+	}
+
+	public static function isValidNumericDraft(text:String, allowDecimal:Bool):Bool
+	{
+		if (text.length == 0)
+			return true;
+
+		if (!allowDecimal)
+		{
+			for (i in 0...text.length)
+			{
+				var c = text.charCodeAt(i);
+				if (c < 48 || c > 57)
+					return false;
+			}
+			return true;
+		}
+
+		var trimmed = StringTools.trim(text);
+		if (trimmed.length == 0)
+			return false;
+		if (trimmed == ".")
+			return false;
+		if (trimmed.charAt(trimmed.length - 1) == ".")
+			return false;
+
+		var dotCount = 0;
+		for (i in 0...trimmed.length)
+		{
+			var c = trimmed.charCodeAt(i);
+			if (c == 46)
+				dotCount++;
+			else if (c < 48 || c > 57)
+				return false;
+		}
+		if (dotCount > 1)
+			return false;
+
+		return Std.parseFloat(trimmed) != null;
 	}
 
 	public function layout(x:Float, y:Float, w:Float, textSize:Int, isFocused:Bool):Void
@@ -160,8 +214,9 @@ class MonitorDetailFieldRow
 		valueText.fieldWidth = innerW;
 		valueText.wordWrap = false;
 		valueText.scale.set(1, 1);
-		var showCursor = isFocused && cursorFitsAtEnd(innerW);
+		var showCursor = isFocused && !readOnly && cursorFitsAtEnd(innerW);
 		valueText.text = draft + (showCursor ? "_" : "");
+		valueText.color = readOnly ? MonitorScreenUi.GREEN_DIM : MonitorScreenUi.GREEN;
 		valueText.setPosition(x + textPad, boxY + (boxH - fontSize) * 0.5);
 		valueText.visible = true;
 	}
@@ -188,7 +243,7 @@ class MonitorDetailFieldRow
 
 	public function overlaps(mx:Float, my:Float):Bool
 	{
-		return hit.visible && hit.overlapsPoint(new FlxPoint(mx, my));
+		return !readOnly && hit.visible && hit.overlapsPoint(new FlxPoint(mx, my));
 	}
 
 	public var visible(get, set):Bool;

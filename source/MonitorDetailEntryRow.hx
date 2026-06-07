@@ -18,7 +18,7 @@ class MonitorDetailEntryRow
 	public function setupSingle(def:CitizenDetailField, value:String):Void
 	{
 		isPair = false;
-		left.setup(def.path, def.label, value, def.choices, def.digitsOnly, def.dateField);
+		left.setup(def.path, def.label, value, def.choices, def.digitsOnly, def.dateField, def.required, def.readOnly, def.allowDecimal);
 		right.visible = false;
 	}
 
@@ -26,8 +26,10 @@ class MonitorDetailEntryRow
 			rightValue:String):Void
 	{
 		isPair = true;
-		left.setup(leftDef.path, leftDef.label, leftValue, leftDef.choices, leftDef.digitsOnly, leftDef.dateField);
-		right.setup(rightDef.path, rightDef.label, rightValue, rightDef.choices, rightDef.digitsOnly, rightDef.dateField);
+		left.setup(leftDef.path, leftDef.label, leftValue, leftDef.choices, leftDef.digitsOnly, leftDef.dateField, leftDef.required,
+			leftDef.readOnly, leftDef.allowDecimal);
+		right.setup(rightDef.path, rightDef.label, rightValue, rightDef.choices, rightDef.digitsOnly, rightDef.dateField,
+			rightDef.required, rightDef.readOnly, rightDef.allowDecimal);
 	}
 
 	public function getFieldRow(path:String):Null<MonitorDetailFieldRow>

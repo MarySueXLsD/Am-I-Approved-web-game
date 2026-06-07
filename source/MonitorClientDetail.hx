@@ -161,6 +161,9 @@ class MonitorClientDetail extends FlxGroup
 
 		applyLayout();
 		visible = true;
+
+		if (confirmDialog.isOpen())
+			confirmDialog.syncBounds(areaX, areaY, areaW, areaH);
 	}
 
 	public function reposition(x:Float, y:Float, w:Float, h:Float):Void
@@ -190,6 +193,9 @@ class MonitorClientDetail extends FlxGroup
 			applyLayout();
 		else if (citizen != null && entries.length > 0)
 			repositionScrollbar();
+
+		if (confirmDialog.isOpen())
+			confirmDialog.syncBounds(areaX, areaY, areaW, areaH);
 	}
 
 	public function setCitizen(c:Citizen, ?resetScroll:Bool = true):Void
@@ -494,8 +500,7 @@ class MonitorClientDetail extends FlxGroup
 			var ch = String.fromCharCode(e.charCode);
 			if (row.digitsOnly)
 			{
-				var code = e.charCode;
-				if (code < 48 || code > 57)
+				if (!MonitorDetailFieldRow.acceptsNumericChar(e.charCode, row.getDraft(), row.allowDecimal))
 				{
 					e.stopImmediatePropagation();
 					return;
@@ -544,30 +549,17 @@ class MonitorClientDetail extends FlxGroup
 		var oldVal = row.getSaved();
 		var newVal = row.getDraft();
 
-		if (row.digitsOnly && newVal.length > 0)
+		if (row.digitsOnly && newVal.length > 0 && !MonitorDetailFieldRow.isValidNumericDraft(newVal, row.allowDecimal))
 		{
-			var allDigits = true;
-			for (i in 0...newVal.length)
+			detachKeyListener();
+			confirmDialog.showWarning(areaX, areaY, areaW, areaH,
+				"Sorry! Our complex AI\nalgorithms detected that\nyou provided wrong values in this input.", function()
 			{
-				var c = newVal.charCodeAt(i);
-				if (c < 48 || c > 57)
-				{
-					allDigits = false;
-					break;
-				}
-			}
-			if (!allDigits)
-			{
-				detachKeyListener();
-				confirmDialog.showWarning(areaX, areaY, areaW, areaH,
-					"Sorry! Our complex AI\nalgorithms detected that\nyou provided wrong values in this input.", function()
-				{
-					row.revertDraft();
-					blurField();
-					refreshRowPositions();
-				});
-				return;
-			}
+				row.revertDraft();
+				blurField();
+				refreshRowPositions();
+			});
+			return;
 		}
 
 		if (row.path == "address.postalCode" && newVal.length > 0)

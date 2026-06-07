@@ -3,15 +3,12 @@ package;
 import flixel.FlxSprite;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
-import flixel.tweens.FlxEase;
-import flixel.tweens.FlxTween;
 
 class MonitorMenuRow
 {
 	public var hit:FlxSprite;
 	public var label:FlxText;
 	public var enabled:Bool;
-	var hoverTween:FlxTween;
 	var labelColor:Int;
 	var dimColor:Int;
 	var text:String;
@@ -67,19 +64,10 @@ class MonitorMenuRow
 		if (!visible || !enabled)
 		{
 			label.color = dimColor;
-			label.scale.set(1, 1);
 			return;
 		}
 
 		var over = hit.overlapsPoint(new FlxPoint(mx, my));
 		label.color = over ? MonitorScreenUi.GREEN_BRIGHT : labelColor;
-
-		var targetScale = over ? 1.06 : 1.0;
-		if (Math.abs(label.scale.x - targetScale) > 0.01)
-		{
-			if (hoverTween != null)
-				hoverTween.cancel();
-			hoverTween = FlxTween.tween(label.scale, {x: targetScale, y: targetScale}, 0.12, {ease: FlxEase.quadOut});
-		}
 	}
 }

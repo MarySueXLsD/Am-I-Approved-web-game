@@ -9,11 +9,21 @@ import openfl.events.KeyboardEvent;
 import openfl.geom.Rectangle;
 import openfl.ui.Keyboard;
 
+enum MonitorTab
+{
+	Terminal;
+	LoanApplication;
+}
+
 enum MonitorView
 {
 	MainMenu;
 	ClientDatabase;
 	ClientDetail;
+	SystemStatus;
+	CurrencyExchange;
+	ConversationRecorder;
+	LoanApplication;
 }
 
 class MonitorScreenUi extends FlxGroup
@@ -21,13 +31,17 @@ class MonitorScreenUi extends FlxGroup
 	public static inline var GREEN = 0xFF33FF66;
 	public static inline var GREEN_DIM = 0xFF1A9940;
 	public static inline var GREEN_BRIGHT = 0xFF66FF99;
+	public static inline var GREEN_CALC_LABEL = 0xFF1F9A44;
+	public static inline var GREEN_CALC_VALUE = 0xFF2BD062;
 	public static inline var BG = 0xFF050A08;
+
+	static inline var SHOW_TAB_BAR = false;
 
 	static var MENU_ITEMS:Array<String> = [
 		"Client Database",
-		"Pending Approvals",
-		"Flagged Accounts",
-		"Wire Transfer Queue",
+		"Loan Application",
+		"Conversation Recorder",
+		"Currency Exchange",
 		"System Status"
 	];
 
@@ -37,6 +51,14 @@ class MonitorScreenUi extends FlxGroup
 	var screenH:Float = 0;
 
 	var view:MonitorView = MainMenu;
+	var activeTab:MonitorTab = MonitorTab.Terminal;
+	var loanState:LoanApplicationState;
+	var loanApp:MonitorLoanApplication;
+	var tabHits:Array<FlxSprite> = [];
+	var tabLabels:Array<FlxText> = [];
+	static var TAB_NAMES:Array<String> = ["Terminal", "Loan Application"];
+	var tabBarH = 0.0;
+	var contentY = 0.0;
 	var bg:FlxSprite;
 	var menuRows:Array<MonitorMenuRow> = [];
 	var searchLabel:FlxText;
@@ -45,11 +67,51 @@ class MonitorScreenUi extends FlxGroup
 	var searchHit:FlxSprite;
 	var clientList:MonitorClientList;
 	var clientDetail:MonitorClientDetail;
+	var creditsPanel:MonitorCreditsPanel;
+	var currencyExchangePanel:MonitorCurrencyExchangePanel;
+	var conversationRecorderPanel:MonitorConversationRecorderPanel;
 	var backButton:MonitorBackButton;
 	var printButton:MonitorBackButton;
 	var titleText:FlxText;
 	var selectedCitizen:Citizen = null;
 	public var onPrintRequest:Void->Bool;
+	public var onConversationLogRequest:Void->Array<ConversationLogEntry>;
+
+	public function setOnPrintRequest(cb:Void->Bool):Void
+	{
+		onPrintRequest = cb;
+		loanApp.onPrintRequest = cb;
+	}
+
+	public function setOnPrintChecklistRequest(cb:Void->Bool):Void
+	{
+		loanApp.onPrintChecklistRequest = cb;
+	}
+
+	public function setOnSubmitForApprovalRequest(cb:Void->Bool):Void
+	{
+		loanApp.onSubmitForApprovalRequest = cb;
+	}
+
+	public function consumePendingLoanFolderSlide():Bool
+	{
+		return loanState.consumeFolderSlide();
+	}
+
+	public function consumePendingAutoPrintLoanForm():Bool
+	{
+		return loanState.consumeAutoPrintLoanForm();
+	}
+
+	public function getLoanId():Null<String>
+	{
+		return loanState.loanId;
+	}
+
+	public function getLoanApplicationData():Null<LoanApplicationData>
+	{
+		return loanState.data;
+	}
 
 	var searchQuery = "";
 	var searchFocused = false;
@@ -60,6 +122,7 @@ class MonitorScreenUi extends FlxGroup
 	var keyHandler:KeyboardEvent->Void;
 	var lastLayoutW = -1.0;
 	var lastLayoutH = -1.0;
+	var lastConversationLogCount = -1;
 	var listAreaY = 0.0;
 	var searchRowY = 0.0;
 
@@ -67,6 +130,7 @@ class MonitorScreenUi extends FlxGroup
 	{
 		super();
 		filtered = [];
+		loanState = new LoanApplicationState();
 
 		bg = new FlxSprite();
 		bg.makeGraphic(1, 1, BG, true);
@@ -79,7 +143,7 @@ class MonitorScreenUi extends FlxGroup
 
 		for (i in 0...MENU_ITEMS.length)
 		{
-			var row = new MonitorMenuRow(MENU_ITEMS[i], i == 0);
+			var row = new MonitorMenuRow(MENU_ITEMS[i], isMenuItemEnabled(MENU_ITEMS[i]));
 			menuRows.push(row);
 			add(row.hit);
 			add(row.label);
@@ -102,12 +166,38 @@ class MonitorScreenUi extends FlxGroup
 		clientDetail = new MonitorClientDetail();
 		add(clientDetail);
 
+		creditsPanel = new MonitorCreditsPanel();
+		add(creditsPanel);
+
+		currencyExchangePanel = new MonitorCurrencyExchangePanel();
+		add(currencyExchangePanel);
+
+		conversationRecorderPanel = new MonitorConversationRecorderPanel();
+		add(conversationRecorderPanel);
+
 		backButton = new MonitorBackButton();
 		printButton = new MonitorBackButton("PRINT >");
 		add(backButton.hit);
 		add(backButton.label);
 		add(printButton.hit);
 		add(printButton.label);
+
+		for (i in 0...TAB_NAMES.length)
+		{
+			var hit = new FlxSprite();
+			hit.visible = false;
+			var lbl = makeText(TAB_NAMES[i], menuFontSize, GREEN_DIM, "center");
+			lbl.visible = false;
+			tabHits.push(hit);
+			tabLabels.push(lbl);
+			add(hit);
+			add(lbl);
+		}
+
+		loanApp = new MonitorLoanApplication(loanState);
+		loanApp.onInternalViewChanged = onLoanInternalViewChanged;
+		loanApp.visible = false;
+		add(loanApp);
 
 		keyHandler = onKeyDown;
 		view = MainMenu;
@@ -147,6 +237,13 @@ class MonitorScreenUi extends FlxGroup
 			return;
 
 		bg.setPosition(screenX, screenY);
+		syncTabBarPositions();
+		if (SHOW_TAB_BAR && activeTab == MonitorTab.LoanApplication)
+		{
+			syncLoanContentBounds();
+			return;
+		}
+
 		switch (view)
 		{
 			case MainMenu:
@@ -155,6 +252,14 @@ class MonitorScreenUi extends FlxGroup
 				syncDatabasePositions();
 			case ClientDetail:
 				syncDetailPositions();
+			case SystemStatus:
+				syncSystemStatusPositions();
+			case CurrencyExchange:
+				syncCurrencyExchangePositions();
+			case ConversationRecorder:
+				syncConversationRecorderPositions();
+			case LoanApplication:
+				syncLoanApplicationPositions();
 		}
 	}
 
@@ -163,10 +268,10 @@ class MonitorScreenUi extends FlxGroup
 		var pad = Std.int(Math.max(8, screenW * 0.04));
 		var innerW = screenW - pad * 2;
 		applyText(titleText, titleText.text, menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
-		titleText.setPosition(screenX + pad, screenY + pad);
+		titleText.setPosition(screenX + pad, contentY);
 		var rowH = menuFontSize + 14;
 		var startY = titleText.y + titleText.height + pad;
-		var rowGap = Std.int(Math.max(6, screenH * 0.025));
+		var rowGap = Std.int(Math.max(6, (screenH - contentY) * 0.025));
 		for (i in 0...menuRows.length)
 		{
 			var row = menuRows[i];
@@ -179,7 +284,7 @@ class MonitorScreenUi extends FlxGroup
 	{
 		var pad = Std.int(Math.max(8, screenW * 0.04));
 		var innerW = screenW - pad * 2;
-		titleText.setPosition(screenX + pad, screenY + pad);
+		titleText.setPosition(screenX + pad, contentY);
 		listAreaY = layoutSearchRow(pad, innerW, titleText.y + titleText.height + pad);
 		var backH = fontSize + 10;
 		var backX = screenX + pad;
@@ -198,6 +303,9 @@ class MonitorScreenUi extends FlxGroup
 	{
 		CitizenRegistry.load();
 		filtered = CitizenRegistry.all;
+		activeTab = MonitorTab.Terminal;
+		loanState.reset();
+		loanApp.reset();
 		setView(MainMenu);
 		searchQuery = "";
 		clientList.scrollIndex = 0;
@@ -209,6 +317,9 @@ class MonitorScreenUi extends FlxGroup
 		setSearchFocused(false);
 		clientList.endDrag();
 		clientDetail.suspendInput();
+		currencyExchangePanel.endDrag();
+		conversationRecorderPanel.endDrag();
+		loanApp.suspendInput();
 	}
 
 	public function containsPoint(px:Float, py:Float):Bool
@@ -218,12 +329,24 @@ class MonitorScreenUi extends FlxGroup
 
 	public function updateInput(px:Float, py:Float):Void
 	{
+		if (isLoanUiActive())
+		{
+			loanApp.updateDrag(px, py);
+			return;
+		}
+
 		switch (view)
 		{
 			case ClientDatabase:
 				clientList.updateDrag(px, py);
 			case ClientDetail:
 				clientDetail.updateDrag(px, py);
+			case SystemStatus:
+				creditsPanel.updateDrag(px, py);
+			case CurrencyExchange:
+				currencyExchangePanel.updateDrag(px, py);
+			case ConversationRecorder:
+				conversationRecorderPanel.updateDrag(px, py);
 			default:
 		}
 	}
@@ -232,6 +355,10 @@ class MonitorScreenUi extends FlxGroup
 	{
 		clientList.endDrag();
 		clientDetail.endDrag();
+		creditsPanel.endDrag();
+		currencyExchangePanel.endDrag();
+		conversationRecorderPanel.endDrag();
+		loanApp.endDrag();
 	}
 
 	public function handleClick(px:Float, py:Float):Bool
@@ -239,16 +366,70 @@ class MonitorScreenUi extends FlxGroup
 		if (!containsPoint(px, py))
 			return false;
 
+		if (SHOW_TAB_BAR && tryHandleTabClick(px, py))
+			return true;
+
+		if (SHOW_TAB_BAR && activeTab == MonitorTab.LoanApplication)
+		{
+			if (loanApp.isModalOpen())
+				return loanApp.handleClick(px, py);
+			return loanApp.handleClick(px, py);
+		}
+
 		switch (view)
 		{
 			case MainMenu:
-				for (row in menuRows)
+				for (i in 0...menuRows.length)
 				{
+					var row = menuRows[i];
 					if (row.enabled && row.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
 					{
-						setView(ClientDatabase);
+						if (MENU_ITEMS[i] == "System Status")
+							setView(SystemStatus);
+						else if (MENU_ITEMS[i] == "Client Database")
+							setView(ClientDatabase);
+						else if (MENU_ITEMS[i] == "Loan Application")
+							setView(MonitorView.LoanApplication);
+						else if (MENU_ITEMS[i] == "Currency Exchange")
+							setView(CurrencyExchange);
+						else if (MENU_ITEMS[i] == "Conversation Recorder")
+							setView(ConversationRecorder);
 						return true;
 					}
+				}
+			case LoanApplication:
+				if (loanApp.isModalOpen())
+					return loanApp.handleClick(px, py);
+				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				{
+					loanApp.suspendInput();
+					setView(MainMenu);
+					return true;
+				}
+				return loanApp.handleClick(px, py);
+			case SystemStatus:
+				if (creditsPanel.handleClick(px, py))
+					return true;
+				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				{
+					setView(MainMenu);
+					return true;
+				}
+			case CurrencyExchange:
+				if (currencyExchangePanel.handleClick(px, py))
+					return true;
+				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				{
+					setView(MainMenu);
+					return true;
+				}
+			case ConversationRecorder:
+				if (conversationRecorderPanel.handleClick(px, py))
+					return true;
+				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				{
+					setView(MainMenu);
+					return true;
 				}
 			case ClientDatabase:
 				if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
@@ -308,6 +489,17 @@ class MonitorScreenUi extends FlxGroup
 		if (!visible || screenW <= 0)
 			return;
 
+		if (isLoanUiActive())
+		{
+			if (!loanApp.isModalOpen())
+			{
+				var loanMouse = FlxG.mouse.getViewPosition();
+				if (loanMouse.x >= screenX && loanMouse.x < screenX + screenW
+					&& loanMouse.y >= contentY && loanMouse.y < screenY + screenH)
+					loanApp.handleWheel(FlxG.mouse.wheel);
+			}
+		}
+
 		switch (view)
 		{
 			case ClientDatabase:
@@ -331,6 +523,20 @@ class MonitorScreenUi extends FlxGroup
 					if (clientDetail.isInPanelArea(detailMouse.x, detailMouse.y))
 						clientDetail.handleWheel(FlxG.mouse.wheel);
 				}
+			case SystemStatus:
+				var creditsMouse = FlxG.mouse.getViewPosition();
+				if (creditsPanel.isInPanelArea(creditsMouse.x, creditsMouse.y))
+					creditsPanel.handleWheel(FlxG.mouse.wheel);
+			case CurrencyExchange:
+				currencyExchangePanel.updateTick(elapsed);
+				var exchangeMouse = FlxG.mouse.getViewPosition();
+				if (currencyExchangePanel.isInPanelArea(exchangeMouse.x, exchangeMouse.y))
+					currencyExchangePanel.handleWheel(FlxG.mouse.wheel);
+			case ConversationRecorder:
+				refreshConversationRecorderIfNeeded();
+				var recorderMouse = FlxG.mouse.getViewPosition();
+				if (conversationRecorderPanel.isInPanelArea(recorderMouse.x, recorderMouse.y))
+					conversationRecorderPanel.handleWheel(FlxG.mouse.wheel);
 			default:
 		}
 	}
@@ -341,6 +547,17 @@ class MonitorScreenUi extends FlxGroup
 			return;
 
 		var mouse = FlxG.mouse.getViewPosition();
+		if (SHOW_TAB_BAR)
+			updateTabHover(mouse.x, mouse.y);
+
+		if (isLoanUiActive())
+		{
+			if (view == MonitorView.LoanApplication && backButton.visible)
+				backButton.updateHover(mouse.x, mouse.y);
+			loanApp.updateHover(mouse.x, mouse.y);
+			return;
+		}
+
 		switch (view)
 		{
 			case MainMenu:
@@ -355,6 +572,16 @@ class MonitorScreenUi extends FlxGroup
 					backButton.updateHover(mouse.x, mouse.y);
 				if (printButton.visible)
 					printButton.updateHover(mouse.x, mouse.y);
+			case SystemStatus:
+				if (backButton.visible)
+					backButton.updateHover(mouse.x, mouse.y);
+			case CurrencyExchange:
+				if (backButton.visible)
+					backButton.updateHover(mouse.x, mouse.y);
+			case ConversationRecorder:
+				if (backButton.visible)
+					backButton.updateHover(mouse.x, mouse.y);
+			case LoanApplication:
 		}
 	}
 
@@ -365,6 +592,16 @@ class MonitorScreenUi extends FlxGroup
 
 		var pad = Std.int(Math.max(8, screenW * 0.04));
 		var innerW = screenW - pad * 2;
+		layoutTabBar(pad, innerW);
+
+		if (SHOW_TAB_BAR && activeTab == MonitorTab.LoanApplication)
+		{
+			hideTerminalContent();
+			layoutLoanApplication(pad, innerW);
+			return;
+		}
+
+		hideLoanContent();
 
 		switch (view)
 		{
@@ -374,18 +611,26 @@ class MonitorScreenUi extends FlxGroup
 				layoutClientDatabase(pad, innerW);
 			case ClientDetail:
 				layoutClientDetail(pad, innerW);
+			case SystemStatus:
+				layoutSystemStatus(pad, innerW);
+			case CurrencyExchange:
+				layoutCurrencyExchange(pad, innerW);
+			case ConversationRecorder:
+				layoutConversationRecorder(pad, innerW);
+			case LoanApplication:
+				layoutLoanApplicationView(pad, innerW);
 		}
 	}
 
 	function layoutMainMenu(pad:Int, innerW:Float):Void
 	{
-		applyText(titleText, "BANK TERMINAL v2.1", menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
-		titleText.setPosition(screenX + pad, screenY + pad);
+		applyText(titleText, "CoolMath Bank Terminal v.2.1", menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
+		titleText.setPosition(screenX + pad, contentY);
 		titleText.visible = true;
 
 		var rowH = menuFontSize + 14;
 		var startY = titleText.y + titleText.height + pad;
-		var rowGap = Std.int(Math.max(6, screenH * 0.025));
+		var rowGap = Std.int(Math.max(6, (screenH - contentY) * 0.025));
 
 		for (i in 0...menuRows.length)
 		{
@@ -403,10 +648,13 @@ class MonitorScreenUi extends FlxGroup
 		for (row in menuRows)
 			row.visible = false;
 
+		hideCreditsWidgets();
+		hideCurrencyExchangeWidgets();
+		hideConversationRecorderWidgets();
 		clientDetail.hide();
 
 		applyText(titleText, "CLIENT DATABASE", menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
-		titleText.setPosition(screenX + pad, screenY + pad);
+		titleText.setPosition(screenX + pad, contentY);
 		titleText.visible = true;
 
 		listAreaY = layoutSearchRow(pad, innerW, titleText.y + titleText.height + pad);
@@ -431,11 +679,14 @@ class MonitorScreenUi extends FlxGroup
 		for (row in menuRows)
 			row.visible = false;
 
+		hideCreditsWidgets();
+		hideCurrencyExchangeWidgets();
+		hideConversationRecorderWidgets();
 		hideDatabaseListWidgets();
 
 		var name = selectedCitizen != null ? CitizenRegistry.displayName(selectedCitizen) : "CLIENT RECORD";
 		applyText(titleText, name.toUpperCase(), menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
-		titleText.setPosition(screenX + pad, screenY + pad);
+		titleText.setPosition(screenX + pad, contentY);
 		titleText.visible = true;
 
 		var backH = fontSize + 10;
@@ -459,7 +710,7 @@ class MonitorScreenUi extends FlxGroup
 	{
 		var pad = Std.int(Math.max(8, screenW * 0.04));
 		var innerW = screenW - pad * 2;
-		titleText.setPosition(screenX + pad, screenY + pad);
+		titleText.setPosition(screenX + pad, contentY);
 
 		var backH = fontSize + 10;
 		var backX = screenX + pad;
@@ -540,9 +791,147 @@ class MonitorScreenUi extends FlxGroup
 		sprite.dirty = true;
 	}
 
+	function layoutSystemStatus(pad:Int, innerW:Float):Void
+	{
+		for (row in menuRows)
+			row.visible = false;
+
+		titleText.visible = false;
+		hideDatabaseListWidgets();
+		hideCurrencyExchangeWidgets();
+		hideConversationRecorderWidgets();
+		clientDetail.hide();
+
+		layoutCreditsPanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		backButton.layout(screenX + pad, screenY + screenH - pad - backH, innerW, backH, fontSize);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function syncSystemStatusPositions():Void
+	{
+		var pad = Std.int(Math.max(8, screenW * 0.04));
+		var innerW = screenW - pad * 2;
+		syncCreditsPanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		backButton.reposition(screenX + pad, backY);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function layoutCreditsPanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		creditsPanel.setBounds(boxX, boxY, boxW, boxH, fontSize);
+	}
+
+	function syncCreditsPanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		creditsPanel.reposition(boxX, boxY, boxW, boxH);
+	}
+
+	function hideCreditsWidgets():Void
+	{
+		creditsPanel.hide();
+	}
+
+	function hideCurrencyExchangeWidgets():Void
+	{
+		currencyExchangePanel.hide();
+	}
+
+	function hideConversationRecorderWidgets():Void
+	{
+		conversationRecorderPanel.hide();
+	}
+
+	function layoutCurrencyExchange(pad:Int, innerW:Float):Void
+	{
+		for (row in menuRows)
+			row.visible = false;
+
+		titleText.visible = false;
+		hideDatabaseListWidgets();
+		clientDetail.hide();
+		hideCreditsWidgets();
+		hideConversationRecorderWidgets();
+
+		layoutCurrencyExchangePanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		backButton.layout(screenX + pad, screenY + screenH - pad - backH, innerW, backH, fontSize);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function syncCurrencyExchangePositions():Void
+	{
+		var pad = Std.int(Math.max(8, screenW * 0.04));
+		var innerW = screenW - pad * 2;
+		syncCurrencyExchangePanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		backButton.reposition(screenX + pad, backY);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function layoutCurrencyExchangePanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		currencyExchangePanel.setBounds(boxX, boxY, boxW, boxH, fontSize);
+	}
+
+	function syncCurrencyExchangePanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		currencyExchangePanel.reposition(boxX, boxY, boxW, boxH);
+	}
+
 	function hideDatabaseWidgets():Void
 	{
 		hideDatabaseListWidgets();
+		hideCreditsWidgets();
+		hideCurrencyExchangeWidgets();
+		hideConversationRecorderWidgets();
 		clientDetail.hide();
 		backButton.visible = false;
 		printButton.visible = false;
@@ -570,11 +959,21 @@ class MonitorScreenUi extends FlxGroup
 			setSearchFocused(false);
 			searchQuery = "";
 			clientList.scrollIndex = 0;
+			creditsPanel.scrollIndex = 0;
+			currencyExchangePanel.scrollIndex = 0;
 			filtered = CitizenRegistry.all;
 			selectedCitizen = null;
 		}
 		else if (view == ClientDatabase && prev == MainMenu)
 			refreshListData();
+		else if (view == SystemStatus)
+			creditsPanel.scrollIndex = 0;
+		else if (view == CurrencyExchange)
+			currencyExchangePanel.scrollIndex = 0;
+		else if (view == ConversationRecorder)
+			refreshConversationRecorder();
+		else if (view == MonitorView.LoanApplication && prev != MonitorView.LoanApplication)
+			loanApp.showMenu();
 
 		layout();
 	}
@@ -663,7 +1062,282 @@ class MonitorScreenUi extends FlxGroup
 	{
 		setSearchFocused(false);
 		clientDetail.suspendInput();
+		loanApp.suspendInput();
 		DebugOverlay.hide();
 		super.destroy();
+	}
+
+	function isMenuItemEnabled(label:String):Bool
+	{
+		return label == "Client Database" || label == "Loan Application" || label == "Conversation Recorder"
+			|| label == "Currency Exchange" || label == "System Status";
+	}
+
+	function layoutConversationRecorder(pad:Int, innerW:Float):Void
+	{
+		for (row in menuRows)
+			row.visible = false;
+
+		applyText(titleText, "CONVERSATION RECORDER", menuFontSize + 2, GREEN_BRIGHT, "center", Std.int(innerW));
+		titleText.setPosition(screenX + pad, contentY);
+		titleText.visible = true;
+
+		hideDatabaseListWidgets();
+		clientDetail.hide();
+		hideCreditsWidgets();
+		hideCurrencyExchangeWidgets();
+
+		layoutConversationRecorderPanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		backButton.layout(screenX + pad, screenY + screenH - pad - backH, innerW, backH, fontSize);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function syncConversationRecorderPositions():Void
+	{
+		var pad = Std.int(Math.max(8, screenW * 0.04));
+		var innerW = screenW - pad * 2;
+		titleText.setPosition(screenX + pad, contentY);
+		syncConversationRecorderPanel(pad, innerW);
+
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		backButton.reposition(screenX + pad, backY);
+		backButton.visible = true;
+		printButton.visible = false;
+	}
+
+	function layoutConversationRecorderPanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY + titleText.height + pad;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		refreshConversationRecorder();
+		conversationRecorderPanel.setBounds(boxX, boxY, boxW, boxH, fontSize);
+	}
+
+	function syncConversationRecorderPanel(pad:Int, innerW:Float):Void
+	{
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var boxX = screenX + pad;
+		var boxY = contentY + titleText.height + pad;
+		var boxW = innerW;
+		var boxH = backY - boxY - 8;
+		if (boxH < 1)
+			boxH = 1;
+
+		conversationRecorderPanel.reposition(boxX, boxY, boxW, boxH);
+	}
+
+	public function refreshOnShow():Void
+	{
+		if (view == ConversationRecorder)
+			refreshConversationRecorder();
+	}
+
+	function refreshConversationRecorder():Void
+	{
+		var entries = onConversationLogRequest != null ? onConversationLogRequest() : [];
+		lastConversationLogCount = entries.length;
+		conversationRecorderPanel.setEntries(entries);
+		conversationRecorderPanel.scrollToEnd();
+	}
+
+	function refreshConversationRecorderIfNeeded():Void
+	{
+		var entries = onConversationLogRequest != null ? onConversationLogRequest() : [];
+		if (entries.length == lastConversationLogCount)
+			return;
+		refreshConversationRecorder();
+	}
+
+	function isLoanUiActive():Bool
+	{
+		return (SHOW_TAB_BAR && activeTab == MonitorTab.LoanApplication) || view == MonitorView.LoanApplication;
+	}
+
+	function onLoanInternalViewChanged():Void
+	{
+		if (view == MonitorView.LoanApplication || (SHOW_TAB_BAR && activeTab == MonitorTab.LoanApplication))
+			layout();
+	}
+
+	function layoutTabBar(pad:Int, innerW:Float):Void
+	{
+		if (!SHOW_TAB_BAR)
+		{
+			for (i in 0...tabHits.length)
+			{
+				tabHits[i].visible = false;
+				tabLabels[i].visible = false;
+			}
+			contentY = screenY + pad;
+			return;
+		}
+
+		tabBarH = menuFontSize + 16;
+		var tabW = innerW / TAB_NAMES.length;
+		var tabY = screenY + pad;
+		for (i in 0...TAB_NAMES.length)
+		{
+			var tx = screenX + pad + i * tabW;
+			var active = (i == 0 && activeTab == MonitorTab.Terminal) || (i == 1 && activeTab == MonitorTab.LoanApplication);
+			tabHits[i].setPosition(tx, tabY);
+			tabHits[i].makeGraphic(Std.int(tabW - 2), Std.int(tabBarH), active ? 0xFF143020 : 0xFF0A120E, true);
+			drawRectBorder(tabHits[i], Std.int(tabW - 2), Std.int(tabBarH), active ? GREEN : GREEN_DIM, 1);
+			tabHits[i].updateHitbox();
+			tabHits[i].visible = true;
+
+			applyText(tabLabels[i], TAB_NAMES[i], menuFontSize - 1, active ? GREEN_BRIGHT : GREEN_DIM, "center", Std.int(tabW - 2));
+			tabLabels[i].setPosition(tx, tabY + (tabBarH - (menuFontSize - 1)) * 0.5);
+			tabLabels[i].visible = true;
+		}
+		contentY = tabY + tabBarH + pad;
+	}
+
+	function syncTabBarPositions():Void
+	{
+		var pad = Std.int(Math.max(8, screenW * 0.04));
+		var innerW = screenW - pad * 2;
+		layoutTabBar(pad, innerW);
+	}
+
+	function tryHandleTabClick(px:Float, py:Float):Bool
+	{
+		if (!SHOW_TAB_BAR)
+			return false;
+
+		for (i in 0...tabHits.length)
+		{
+			if (tabHits[i].visible && tabHits[i].overlapsPoint(new flixel.math.FlxPoint(px, py)))
+			{
+				var next = i == 0 ? MonitorTab.Terminal : MonitorTab.LoanApplication;
+				setTab(next);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function updateTabHover(mx:Float, my:Float):Void
+	{
+		if (!SHOW_TAB_BAR)
+			return;
+
+		for (i in 0...tabHits.length)
+		{
+			var active = (i == 0 && activeTab == MonitorTab.Terminal) || (i == 1 && activeTab == MonitorTab.LoanApplication);
+			var over = tabHits[i].visible && tabHits[i].overlapsPoint(new flixel.math.FlxPoint(mx, my));
+			tabLabels[i].color = active ? GREEN_BRIGHT : (over ? GREEN : GREEN_DIM);
+		}
+	}
+
+	function setTab(next:MonitorTab):Void
+	{
+		if (activeTab == next)
+			return;
+
+		setSearchFocused(false);
+		clientDetail.suspendInput();
+		loanApp.suspendInput();
+
+		activeTab = next;
+		if (activeTab == MonitorTab.LoanApplication)
+			loanApp.showMenu();
+		else
+			setView(MainMenu);
+
+		layout();
+	}
+
+	function layoutLoanApplication(pad:Int, innerW:Float):Void
+	{
+		loanApp.visible = true;
+		syncLoanContentBounds(pad, innerW);
+	}
+
+	function layoutLoanApplicationView(pad:Int, innerW:Float):Void
+	{
+		for (row in menuRows)
+			row.visible = false;
+
+		hideDatabaseWidgets();
+		titleText.visible = false;
+
+		var backH = fontSize + 10;
+		var backW = innerW * 0.35;
+		var backY = screenY + screenH - pad - backH;
+		var onLoanMenu = loanApp.isOnMenu();
+
+		backButton.layout(screenX + pad, backY, backW, backH, fontSize);
+		backButton.visible = onLoanMenu;
+		printButton.visible = false;
+
+		loanApp.visible = true;
+		var panelY = contentY;
+		var panelBottom = onLoanMenu ? backButton.hit.y : screenY + screenH - pad;
+		var panelH = panelBottom - panelY - 6;
+		if (panelH < 1)
+			panelH = 1;
+		loanApp.setBounds(screenX + pad, panelY, innerW, panelH, fontSize, menuFontSize);
+	}
+
+	function syncLoanApplicationPositions():Void
+	{
+		var pad = Std.int(Math.max(8, screenW * 0.04));
+		var innerW = screenW - pad * 2;
+		var backH = fontSize + 10;
+		var backY = screenY + screenH - pad - backH;
+		var onLoanMenu = loanApp.isOnMenu();
+
+		if (onLoanMenu)
+		{
+			backButton.reposition(screenX + pad, backY);
+			backButton.visible = true;
+		}
+		else
+			backButton.visible = false;
+
+		var panelY = contentY;
+		var panelBottom = onLoanMenu ? backButton.hit.y : screenY + screenH - pad;
+		var panelH = panelBottom - panelY - 6;
+		if (panelH < 1)
+			panelH = 1;
+		loanApp.setBounds(screenX + pad, panelY, innerW, panelH, fontSize, menuFontSize);
+	}
+
+	function syncLoanContentBounds(?pad:Int = null, ?innerW:Float = null):Void
+	{
+		if (pad == null)
+			pad = Std.int(Math.max(8, screenW * 0.04));
+		if (innerW == null)
+			innerW = screenW - pad * 2;
+		var contentH = screenY + screenH - contentY - pad;
+		if (contentH < 1)
+			contentH = 1;
+		loanApp.setBounds(screenX + pad, contentY, innerW, contentH, fontSize, menuFontSize);
+	}
+
+	function hideTerminalContent():Void
+	{
+		hideDatabaseWidgets();
+		for (row in menuRows)
+			row.visible = false;
+		titleText.visible = false;
+	}
+
+	function hideLoanContent():Void
+	{
+		loanApp.visible = false;
+		loanApp.suspendInput();
 	}
 }
