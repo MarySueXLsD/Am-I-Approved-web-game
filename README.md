@@ -4,16 +4,6 @@ A bureaucratic loan desk sim set in the Republic of Loria, circa 1967. You were 
 
 **[Play in your browser →](https://marysue.itch.io/am-i-approved)**
 
-## Screenshots
-
-![Start the day](assets/start_the_day.jpg)
-
-![The desk](assets/the_desk.jpg)
-
-![Client database](assets/client_database.jpg)
-
-![Credits](assets/credits.jpg)
-
 ## About
 
 Clients arrive at your desk with stories, passports, and paperwork that does not always add up. Your job is to listen, inspect, compare, and decide who gets the money.
@@ -32,6 +22,35 @@ Clients arrive at your desk with stories, passports, and paperwork that does not
 - Tutorial and employee handbook to walk you through day one
 - A fully stocked desk: printer, shredder, calculator, loan folder, magnifying glass, and too much paperwork
 - Pixel-art desk sim at 800×600
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Start the day</strong> — Skim the morning paper over coffee before the first client arrives. The Republic of Loria keeps busy even when management does not.
+      <br><br>
+      <img src="assets/start_the_day.jpg" width="100%" alt="Start the day">
+    </td>
+    <td width="50%" valign="top">
+      <strong>The desk</strong> — Loan folders, the guide book, and Chef's day-one coaching. Cross-check applications against salary, expenses, and whatever the client forgot to mention.
+      <br><br>
+      <img src="assets/the_desk.jpg" width="100%" alt="The desk">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Client database</strong> — Search citizen records on the green-screen CoolMath Bank terminal. Verify names, IDs, and details before you approve anyone.
+      <br><br>
+      <img src="assets/client_database.jpg" width="100%" alt="Client database">
+    </td>
+    <td width="50%" valign="top">
+      <strong>Credits</strong> — The team behind the desk sim, from the main menu's rainy city backdrop.
+      <br><br>
+      <img src="assets/credits.jpg" width="100%" alt="Credits">
+    </td>
+  </tr>
+</table>
 
 ## Coolmath Game Jam 2026
 
