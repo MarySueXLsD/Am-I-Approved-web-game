@@ -45,7 +45,7 @@ Clients arrive at your desk with stories, passports, and paperwork that does not
       <img src="assets/client_database.jpg" width="100%" alt="Client database">
     </td>
     <td width="50%" valign="top">
-      <strong>Credits</strong> — The team behind the desk sim, from the main menu's rainy city backdrop.
+      <strong>Credits</strong> — The team behind the desk sim, from the main menu's city backdrop.
       <br><br>
       <img src="assets/credits.jpg" width="100%" alt="Credits">
     </td>
