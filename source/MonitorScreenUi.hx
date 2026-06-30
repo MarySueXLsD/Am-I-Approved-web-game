@@ -72,10 +72,19 @@ class MonitorScreenUi extends FlxGroup
 	var conversationRecorderPanel:MonitorConversationRecorderPanel;
 	var backButton:MonitorBackButton;
 	var printButton:MonitorBackButton;
+	var printButtonEnabled = true;
 	var titleText:FlxText;
 	var selectedCitizen:Citizen = null;
 	public var onPrintRequest:Void->Bool;
 	public var onConversationLogRequest:Void->Array<ConversationLogEntry>;
+	public var tutorialClickFilter:Null<Float->Float->Bool> = null;
+	public var onTutorialClickBlocked:Null<Float->Float->Void> = null;
+
+	public function setPrintButtonEnabled(value:Bool):Void
+	{
+		printButtonEnabled = value;
+		printButton.setEnabled(value);
+	}
 
 	public function setOnPrintRequest(cb:Void->Bool):Void
 	{
@@ -91,6 +100,26 @@ class MonitorScreenUi extends FlxGroup
 	public function setOnSubmitForApprovalRequest(cb:Void->Bool):Void
 	{
 		loanApp.onSubmitForApprovalRequest = cb;
+	}
+
+	public function setOnLoanApplicationSubmitted(cb:Void->Void):Void
+	{
+		loanApp.onApplicationSubmitted = cb;
+	}
+
+	public function setValidateFieldEdit(cb:Null<(citizen:Citizen, path:String, value:String) -> Null<String>>):Void
+	{
+		clientDetail.validateFieldEdit = cb;
+	}
+
+	public function setOnFieldValidationFailed(cb:Null<(path:String, message:String) -> Bool>):Void
+	{
+		clientDetail.onFieldValidationFailed = cb;
+	}
+
+	public function setShouldRevertOnCoachValidation(cb:Null<String->Bool>):Void
+	{
+		clientDetail.shouldRevertOnCoachValidation = cb;
 	}
 
 	public function consumePendingLoanFolderSlide():Bool
@@ -113,8 +142,32 @@ class MonitorScreenUi extends FlxGroup
 		return loanState.data;
 	}
 
+	public function getTerminalPrintJob():TerminalPrintJob
+	{
+		return switch (view)
+		{
+			case ClientDetail:
+				TerminalPrintJob.ClientDetails;
+			case LoanApplication:
+				TerminalPrintJob.LoanApplicationForm;
+			default:
+				TerminalPrintJob.LoanApplicationForm;
+		}
+	}
+
+	public function getSelectedCitizen():Null<Citizen>
+	{
+		return selectedCitizen;
+	}
+
+	public function getSearchQuery():String
+	{
+		return searchQuery;
+	}
+
 	var searchQuery = "";
 	var searchFocused = false;
+	var searchKeyListenerAttached = false;
 	var filtered:Array<Citizen> = [];
 	var rowHeight = 14;
 	var fontSize = 12;
@@ -366,6 +419,13 @@ class MonitorScreenUi extends FlxGroup
 		if (!containsPoint(px, py))
 			return false;
 
+		if (tutorialClickFilter != null && !tutorialClickFilter(px, py))
+		{
+			if (onTutorialClickBlocked != null)
+				onTutorialClickBlocked(px, py);
+			return true;
+		}
+
 		if (SHOW_TAB_BAR && tryHandleTabClick(px, py))
 			return true;
 
@@ -387,7 +447,10 @@ class MonitorScreenUi extends FlxGroup
 						if (MENU_ITEMS[i] == "System Status")
 							setView(SystemStatus);
 						else if (MENU_ITEMS[i] == "Client Database")
+						{
 							setView(ClientDatabase);
+							focusSearchField();
+						}
 						else if (MENU_ITEMS[i] == "Loan Application")
 							setView(MonitorView.LoanApplication);
 						else if (MENU_ITEMS[i] == "Currency Exchange")
@@ -464,7 +527,8 @@ class MonitorScreenUi extends FlxGroup
 					setView(ClientDatabase);
 					return true;
 				}
-				if (printButton.visible && printButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+				if (printButton.visible && printButton.isEnabled()
+					&& printButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
 				{
 					if (clientDetail.hasPendingEdit())
 					{
@@ -665,6 +729,7 @@ class MonitorScreenUi extends FlxGroup
 		printButton.layout(screenX + pad + innerW - backW, screenY + screenH - pad - backH, backW, backH, fontSize);
 		backButton.visible = true;
 		printButton.visible = true;
+		printButton.setEnabled(printButtonEnabled);
 
 		var listH = backButton.hit.y - listAreaY - 6;
 		if (listH < rowHeight)
@@ -695,6 +760,7 @@ class MonitorScreenUi extends FlxGroup
 		printButton.layout(screenX + pad + innerW - backW, screenY + screenH - pad - backH, backW, backH, fontSize);
 		backButton.visible = true;
 		printButton.visible = true;
+		printButton.setEnabled(printButtonEnabled);
 
 		var panelY = titleText.y + titleText.height + pad;
 		var panelH = backButton.hit.y - panelY - 6;
@@ -719,6 +785,7 @@ class MonitorScreenUi extends FlxGroup
 		printButton.reposition(screenX + pad + innerW - backButton.hit.width, backY);
 		backButton.visible = true;
 		printButton.visible = true;
+		printButton.setEnabled(printButtonEnabled);
 
 		var panelY = titleText.y + titleText.height + pad;
 		var panelH = backButton.hit.y - panelY - 6;
@@ -733,6 +800,13 @@ class MonitorScreenUi extends FlxGroup
 		selectedCitizen = c;
 		setSearchFocused(false);
 		setView(ClientDetail);
+	}
+
+	public function openTutorialCitizen(index:Int):Void
+	{
+		if (index < 0 || index >= CitizenRegistry.all.length)
+			return;
+		openClientDetail(CitizenRegistry.all[index]);
 	}
 
 	function layoutSearchRow(pad:Int, innerW:Float, y:Float):Float
@@ -949,6 +1023,8 @@ class MonitorScreenUi extends FlxGroup
 	function setView(next:MonitorView):Void
 	{
 		var prev = view;
+		if (next != prev)
+			suspendInput();
 		view = next;
 
 		if (view == ClientDatabase || view == ClientDetail)
@@ -978,22 +1054,22 @@ class MonitorScreenUi extends FlxGroup
 		layout();
 	}
 
+	public function focusSearchField():Void
+	{
+		if (view == ClientDatabase)
+			setSearchFocused(true);
+	}
+
 	function setSearchFocused(focused:Bool):Void
 	{
-		if (searchFocused == focused)
-			return;
-
+		var wasFocused = searchFocused;
 		searchFocused = focused;
 		var stage = Lib.current.stage;
-		if (stage == null)
-			return;
-
+		searchKeyListenerAttached = MonitorKeyboard.detach(stage, keyHandler, searchKeyListenerAttached);
 		if (searchFocused)
-			stage.addEventListener(KeyboardEvent.KEY_DOWN, keyHandler, false, 0, true);
-		else
-			stage.removeEventListener(KeyboardEvent.KEY_DOWN, keyHandler);
+			searchKeyListenerAttached = MonitorKeyboard.attach(stage, keyHandler, false);
 
-		if (view == ClientDatabase)
+		if (wasFocused != focused && view == ClientDatabase)
 			refreshSearchRow();
 	}
 
@@ -1026,10 +1102,13 @@ class MonitorScreenUi extends FlxGroup
 			setSearchFocused(false);
 			return;
 		}
-		else if (e.charCode > 32)
-			searchQuery += Std.string(String.fromCharCode(e.charCode));
 		else
-			return;
+		{
+			var ch = MonitorKeyboard.typedCharacter(e);
+			if (ch == null)
+				return;
+			searchQuery += ch;
+		}
 
 		e.stopImmediatePropagation();
 		refreshListData();
@@ -1339,5 +1418,269 @@ class MonitorScreenUi extends FlxGroup
 	{
 		loanApp.visible = false;
 		loanApp.suspendInput();
+	}
+
+	public function getCurrentView():MonitorView
+	{
+		return view;
+	}
+
+	public function isOnMainMenu():Bool
+	{
+		return view == MainMenu;
+	}
+
+	public function isOnClientDatabase():Bool
+	{
+		return view == ClientDatabase;
+	}
+
+	public function isOnClientDetail():Bool
+	{
+		return view == ClientDetail;
+	}
+
+	public function isOnLoanApplication():Bool
+	{
+		return view == LoanApplication;
+	}
+
+	public function isOnLoanNewForm():Bool
+	{
+		return isOnLoanApplication() && loanApp.isOnNewForm();
+	}
+
+	public function getLoanFocusedFieldPath():Null<String>
+	{
+		if (!isOnLoanApplication())
+			return null;
+		return loanApp.getFocusedFieldPath();
+	}
+
+	public function hasLoanFieldValue(path:String):Bool
+	{
+		if (!isOnLoanApplication())
+			return false;
+		return loanApp.hasFieldValue(path);
+	}
+
+	public function getLoanFieldValue(path:String):String
+	{
+		if (!isOnLoanApplication())
+			return "";
+		return loanApp.getFieldValue(path);
+	}
+
+	public function getLoanMonthlyPayment():Float
+	{
+		if (!isOnLoanNewForm())
+			return 0;
+		return loanApp.getMonthlyPayment();
+	}
+
+	public function ensureLoanCalcPaymentVisible():Void
+	{
+		if (!isOnLoanNewForm())
+			return;
+		loanApp.ensureCalcPaymentVisible();
+	}
+
+	public function isLoanFormScrolledToBottom():Bool
+	{
+		if (!isOnLoanNewForm())
+			return false;
+		return loanApp.isScrolledToBottom();
+	}
+
+	public function isLoanFormScrolledNearBottom():Bool
+	{
+		if (!isOnLoanNewForm())
+			return false;
+		return loanApp.isScrolledNearBottom();
+	}
+
+	public function getLoanAffordabilityVerdict():String
+	{
+		if (!isOnLoanNewForm())
+			return "";
+		return loanApp.getAffordabilityVerdict();
+	}
+
+	public function isTutorialBackClick(px:Float, py:Float):Bool
+	{
+		if (backButton.visible && backButton.hit.overlapsPoint(new flixel.math.FlxPoint(px, py)))
+			return true;
+		return false;
+	}
+
+	public function isTutorialMenuClick(px:Float, py:Float, kind:String):Bool
+	{
+		if (view != MainMenu)
+			return false;
+		return switch (kind)
+		{
+			case "menu_loan_application":
+				menuRows.length > 1 && menuRows[1].enabled
+					&& menuRows[1].hit.overlapsPoint(new flixel.math.FlxPoint(px, py));
+			default:
+				false;
+		};
+	}
+
+	public function isTutorialLoanMenuClick(px:Float, py:Float, index:Int):Bool
+	{
+		if (!isOnLoanApplication())
+			return false;
+		return loanApp.isMenuClick(px, py, index);
+	}
+
+	public function isTutorialLoanSubmitClick(px:Float, py:Float):Bool
+	{
+		if (!isOnLoanNewForm())
+			return false;
+		var bounds = getTutorialHighlight("loan_submit_button");
+		if (bounds == null)
+			return false;
+		return px >= bounds.x && px < bounds.x + bounds.w && py >= bounds.y && py < bounds.y + bounds.h;
+	}
+
+	public function prefillTutorialSearch(query:String):Void
+	{
+		searchQuery = query;
+		if (view == ClientDatabase)
+		{
+			refreshListData();
+			refreshSearchRow();
+		}
+	}
+
+	public function ensureTutorialFieldVisible(path:String):Void
+	{
+		if (view == ClientDetail)
+			clientDetail.ensureFieldVisible(path);
+	}
+
+	public function isConfirmModalOpen():Bool
+	{
+		return view == ClientDetail && clientDetail.isModalOpen();
+	}
+
+	public function getTutorialHighlight(kind:String):Null<TutorialGuideRect>
+	{
+		return switch (kind)
+		{
+			case "menu_client_database":
+				if (view != MainMenu || menuRows.length == 0)
+					null;
+				else
+					spriteRect(menuRows[0].hit);
+			case "search_field":
+				if (view != ClientDatabase || !searchInputBox.visible)
+					null;
+				else
+					spriteRect(searchInputBox);
+			case "client_row":
+				getTutorialClientRowBounds();
+			case "salary_field":
+				if (view != ClientDetail)
+					null;
+				else
+					clientDetail.getFieldBounds("averageAnnualSalary");
+			case "print_button":
+				if (view != ClientDetail || !printButton.visible)
+					null;
+				else
+					spriteRect(printButton.hit);
+			case "menu_loan_application":
+				if (view != MainMenu || menuRows.length < 2)
+					null;
+				else
+					spriteRect(menuRows[1].hit);
+			case "loan_new_application":
+				loanApp.getMenuRowBounds(0);
+			case "loan_print_checklist":
+				if (!isOnLoanApplication())
+					null;
+				else
+					loanApp.getMenuRowBounds(1);
+			case "loan_print_application":
+				if (!isOnLoanApplication())
+					null;
+				else
+					loanApp.getMenuRowBounds(2);
+			case "loan_submit_approval":
+				if (!isOnLoanApplication())
+					null;
+				else
+					loanApp.getMenuRowBounds(3);
+			case "loan_national_id":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("nationalId");
+			case "loan_loan_type":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("loanType");
+			case "loan_amount":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("amount");
+			case "loan_term":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("term");
+			case "loan_declared_salary":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("declaredSalary");
+			case "loan_security":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("security");
+			case "loan_spend_housing":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getFieldBounds("spendHousing");
+			case "loan_scroll":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getScrollColumnBounds();
+			case "loan_calc_payment":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getCalcPaymentBounds();
+			case "loan_submit_button":
+				if (!isOnLoanNewForm())
+					null;
+				else
+					loanApp.getSubmitButtonBounds();
+			default:
+				null;
+		}
+	}
+
+	function getTutorialClientRowBounds():Null<TutorialGuideRect>
+	{
+		if (view != ClientDatabase || CitizenRegistry.all.length <= ChefTutorial.CITIZEN_INDEX)
+			return null;
+		var citizen = CitizenRegistry.all[ChefTutorial.CITIZEN_INDEX];
+		var dataIndex = clientList.findDataIndexForCitizen(citizen);
+		if (dataIndex < 0)
+			return null;
+		return clientList.getRowBoundsForDataIndex(dataIndex);
+	}
+
+	function spriteRect(sprite:FlxSprite):TutorialGuideRect
+	{
+		return {x: sprite.x, y: sprite.y, w: sprite.width, h: sprite.height};
 	}
 }

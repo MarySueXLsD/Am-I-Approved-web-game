@@ -37,7 +37,10 @@ class JobContractDocument extends DeskDocument
 		{
 			var partBounds = regionScanBoundsAt(point, layout.nameScan);
 			if (partBounds != null)
+			{
+				partBounds.tag = BookScanActions.DOCUMENT_NAME_TAG;
 				return partBounds;
+			}
 
 			partBounds = regionScanBoundsAt(point, layout.salaryScan);
 			if (partBounds != null)

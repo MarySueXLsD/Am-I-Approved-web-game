@@ -68,11 +68,7 @@ class LoanApplicationValidator
 		{
 			var salary = parseAmount(data.declaredSalary);
 			if (salary == null || Math.abs(salary - expectedMonthly) > AMOUNT_TOLERANCE)
-			{
-				errors.push("Monthly salary should be " + LoanAffordabilityCalculator.formatLorDisplay(expectedMonthly)
-					+ " LOR (annual salary " + LoanAffordabilityCalculator.formatLorDisplay(citizen.averageAnnualSalary)
-					+ " LOR ÷ 12).");
-			}
+				errors.push("Monthly salary is incorrect.");
 		}
 
 		if (scenario.expectedSpendHousing > 0)
@@ -99,7 +95,7 @@ class LoanApplicationValidator
 		var calc = LoanAffordabilityCalculator.compute(data);
 		if (!calc.ready)
 			errors.push("Loan application is incomplete — fill all required fields.");
-		else if (calc.verdict != "AFFORDABLE")
+		else if (!isApprovableVerdict(calc.verdict))
 			errors.push("Loan is not affordable with the stated income and expenses (" + formatVerdict(calc.verdict) + ").");
 
 		if (errors.length > 0)
@@ -130,18 +126,18 @@ class LoanApplicationValidator
 
 		if (data == null)
 		{
-			messages.push("I don't see a loan application here yet.");
+			messages.push("I don't see an application here.");
 			return messages;
 		}
 
 		if (StringTools.trim(data.nationalId) != citizen.nationalId)
-			messages.push("That's not my national ID on the application.");
+			messages.push("That's not my national ID.");
 
 		if (scenario.expectedAmount > 0)
 		{
 			var amount = parseAmount(data.amount);
 			if (amount == null || Math.abs(amount - scenario.expectedAmount) > AMOUNT_TOLERANCE)
-				messages.push("That's not the amount I asked for — I need around "
+				messages.push("Wrong amount — I need around "
 					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedAmount) + " LOR.");
 		}
 
@@ -149,7 +145,7 @@ class LoanApplicationValidator
 		{
 			var product = LoanProductRates.normalizeProduct(data.loanType);
 			if (product != scenario.expectedLoanType)
-				messages.push("That's not the kind of loan I wanted.");
+				messages.push("That's not the loan type I wanted.");
 		}
 
 		if (scenario.expectedSecurity.length > 0)
@@ -158,8 +154,8 @@ class LoanApplicationValidator
 			if (security != scenario.expectedSecurity)
 			{
 				messages.push(scenario.expectedSecurity == "secured"
-					? "I asked for a secured loan."
-					: "I asked for an unsecured loan.");
+					? "I wanted a secured loan."
+					: "I wanted an unsecured loan.");
 			}
 		}
 
@@ -170,9 +166,9 @@ class LoanApplicationValidator
 			if (salary == null || Math.abs(salary - expectedMonthly) > AMOUNT_TOLERANCE)
 			{
 				if (salary != null && salary < expectedMonthly)
-					messages.push("But I earn more than that! You filled my salary wrong.");
+					messages.push("I earn more than that — salary's wrong.");
 				else
-					messages.push("I don't earn that much — you got my salary wrong.");
+					messages.push("I don't earn that much — salary's wrong.");
 			}
 		}
 
@@ -180,15 +176,16 @@ class LoanApplicationValidator
 		{
 			var housing = parseAmount(data.spendHousing);
 			if (housing == null || Math.abs(housing - scenario.expectedSpendHousing) > AMOUNT_TOLERANCE)
-				messages.push("My housing costs aren't " + formatExpenseValue(housing) + " — rent is about "
-					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedSpendHousing) + " LOR.");
+				messages.push("Rent is about "
+					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedSpendHousing) + " LOR, not "
+					+ formatExpenseValue(housing) + ".");
 		}
 
 		if (scenario.expectedSpendLiving > 0)
 		{
 			var living = parseAmount(data.spendLiving);
 			if (living == null || Math.abs(living - scenario.expectedSpendLiving) > AMOUNT_TOLERANCE)
-				messages.push("My living expenses aren't right on there — they're closer to "
+				messages.push("Living expenses are closer to "
 					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedSpendLiving) + " LOR a month.");
 		}
 
@@ -196,7 +193,7 @@ class LoanApplicationValidator
 		{
 			var other = parseAmount(data.spendOther);
 			if (other == null || Math.abs(other - scenario.expectedSpendOther) > AMOUNT_TOLERANCE)
-				messages.push("The other expenses look off — mine are around "
+				messages.push("Other expenses are around "
 					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedSpendOther) + " LOR.");
 		}
 
@@ -205,7 +202,7 @@ class LoanApplicationValidator
 			var term = parseTerm(data.term);
 			if (term == null || scenario.expectedTerms.indexOf(term) < 0)
 			{
-				messages.push("That monthly payment doesn't work for me — I wanted something closer to "
+				messages.push("That payment's too high — I wanted closer to "
 					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedComfortablePayment)
 					+ " LOR a month.");
 			}
@@ -213,7 +210,7 @@ class LoanApplicationValidator
 
 		var calc = LoanAffordabilityCalculator.compute(data);
 		if (calc.ready && calc.verdict == "NOT AFFORDABLE" && messages.length == 0)
-			messages.push("With those numbers I don't think I could keep up with the payments...");
+			messages.push("I don't think I could keep up with those payments...");
 
 		return messages;
 	}
@@ -245,6 +242,11 @@ class LoanApplicationValidator
 		if (n == null || n < 1)
 			return null;
 		return n;
+	}
+
+	static function isApprovableVerdict(verdict:String):Bool
+	{
+		return verdict == "AFFORDABLE" || verdict == "MARGINAL";
 	}
 
 	static function formatVerdict(verdict:String):String

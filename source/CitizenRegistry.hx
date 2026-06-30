@@ -34,15 +34,58 @@ class CitizenRegistry
 		catch (e:Dynamic) {}
 		#end
 
+		var bundled = Assets.getText("static/citizens.json");
 		if (raw == null)
-			raw = Assets.getText("static/citizens.json");
+			raw = bundled;
 
-		parseCitizensJson(raw);
+		try
+		{
+			parseCitizensJson(raw);
+		}
+		catch (e:Dynamic)
+		{
+			clearStoredCitizens();
+
+			if (raw != bundled)
+				parseCitizensJson(bundled);
+			else
+				throw e;
+		}
+	}
+
+	static function clearStoredCitizens():Void
+	{
+		#if js
+		try
+		{
+			var storage = Browser.getLocalStorage();
+			if (storage != null)
+				storage.removeItem(SAVE_KEY);
+		}
+		catch (e:Dynamic) {}
+		#end
 	}
 
 	public static function reload():Void
 	{
 		all = [];
+		load();
+	}
+
+	public static function resetForNewGame():Void
+	{
+		all = [];
+
+		#if js
+		try
+		{
+			var storage = Browser.getLocalStorage();
+			if (storage != null)
+				storage.removeItem(SAVE_KEY);
+		}
+		catch (e:Dynamic) {}
+		#end
+
 		load();
 	}
 
@@ -159,7 +202,8 @@ class CitizenRegistry
 					occupation: employmentContractDoc != null ? employmentContractDoc.occupation : entry.occupation,
 					annualSalary: employmentContractDoc != null ? employmentContractDoc.annualSalary : entry.averageAnnualSalary,
 					salaryCurrency: employmentContractDoc != null ? employmentContractDoc.salaryCurrency : entry.salaryCurrency
-				}
+				},
+				visit: entry.visit
 			});
 		}
 	}
@@ -241,7 +285,8 @@ class CitizenRegistry
 				occupation: c.employmentContractDoc.occupation,
 				annualSalary: c.employmentContractDoc.annualSalary,
 				salaryCurrency: c.employmentContractDoc.salaryCurrency
-			}
+			},
+			visit: c.visit
 		};
 	}
 
@@ -249,12 +294,34 @@ class CitizenRegistry
 	{
 		var q = normalizeSearch(query);
 		if (q.length == 0)
-			return all;
+			return sortedForDisplay(all);
 
 		return all.filter(function(c)
 		{
-			return searchHaystack(c).indexOf(q) >= 0;
+			return normalizeSearch(searchHaystack(c)).indexOf(q) >= 0;
 		});
+	}
+
+	public static function sortedForDisplay(citizens:Array<Citizen>):Array<Citizen>
+	{
+		var copy = citizens.copy();
+		copy.sort(function(a:Citizen, b:Citizen)
+		{
+			var la = a.lastName.toLowerCase();
+			var lb = b.lastName.toLowerCase();
+			if (la < lb)
+				return -1;
+			if (la > lb)
+				return 1;
+			var fa = a.firstName.toLowerCase();
+			var fb = b.firstName.toLowerCase();
+			if (fa < fb)
+				return -1;
+			if (fa > fb)
+				return 1;
+			return 0;
+		});
+		return copy;
 	}
 
 	public static function nationalIdSuggestionLine(c:Citizen):String

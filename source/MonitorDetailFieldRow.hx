@@ -168,17 +168,21 @@ class MonitorDetailFieldRow
 	{
 		fontSize = textSize;
 		boxH = fontSize + 10;
-		var labelH = fontSize;
 		var rowGap = 2;
-		var labelSize = Std.int(Math.max(10, fontSize - 1));
+		var labelSize = fontSize;
 
 		labelText.text = fieldLabel;
 		labelText.setFormat(null, labelSize, MonitorScreenUi.GREEN_DIM, "left");
 		labelText.color = MonitorScreenUi.GREEN_DIM;
 		labelText.fieldWidth = Std.int(w);
+		labelText.wordWrap = true;
+		labelText.autoSize = false;
 		labelText.scale.set(1, 1);
 		labelText.setPosition(x, y);
 		labelText.visible = fieldLabel.length > 0;
+		labelText.height = labelText.textField.textHeight + 2;
+		labelText.updateHitbox();
+		var labelH = Std.int(Math.max(fontSize, labelText.textField.textHeight));
 
 		var boxY = y + labelH + rowGap;
 		var boxW = Std.int(Math.max(40, w));

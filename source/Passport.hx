@@ -2,6 +2,7 @@ package;
 
 import flixel.FlxSprite;
 import flixel.group.FlxGroup;
+import flixel.math.FlxPoint;
 import flixel.text.FlxText;
 import openfl.display.BitmapData;
 import openfl.utils.Assets;
@@ -13,6 +14,7 @@ class Passport extends DeskDocument
 	static inline var OPEN_SIZE_MULTIPLIER = 9.0;
 	static inline var DOCUMENT_FONT_SIZE = 11;
 	static inline var COPY_FONT_SIZE_SCALE = 1.85;
+	static inline var FIELD_SCAN_PAD = 3.0;
 
 	var textLayer:FlxGroup;
 	var photoSprite:FlxSprite;
@@ -22,6 +24,7 @@ class Passport extends DeskDocument
 	var textsShown = false;
 	var citizen:Citizen;
 	var layout:PassportLayout;
+	var lastTextOverlayLayoutKey = -1.0;
 
 	public function new(zones:LayoutZones, layer:FlxGroup)
 	{
@@ -62,6 +65,22 @@ class Passport extends DeskDocument
 		for (slot in layout.fields)
 			lines.push(PassportLayouts.fieldValue(citizen, slot.kind));
 		return lines.join("\n");
+	}
+
+	override public function resolveScanBoundsAt(point:FlxPoint):Null<ScanBounds>
+	{
+		if (!visible || !hitsPoint(point))
+			return null;
+
+		if (isOpen && citizen != null)
+		{
+			updateTextOverlays();
+			var partBounds = scanBoundsForPartAt(point);
+			if (partBounds != null)
+				return partBounds;
+		}
+
+		return getDocumentScanBounds();
 	}
 
 	public static function layoutCopyPhotoOverlay(layout:PassportLayout, photo:FlxSprite, docX:Float, docY:Float, docW:Float, docH:Float):Void
@@ -233,11 +252,17 @@ class Passport extends DeskDocument
 
 		if (!shouldShow)
 		{
+			lastTextOverlayLayoutKey = -1.0;
 			for (value in fieldValues)
 				value.clipRect = null;
 			photoSprite.clipRect = null;
 			return;
 		}
+
+		var layoutKey = x + y * 10000 + width * 100 + height;
+		if (layoutKey == lastTextOverlayLayoutKey)
+			return;
+		lastTextOverlayLayoutKey = layoutKey;
 
 		ensureOverlaysOnTop();
 
@@ -290,5 +315,41 @@ class Passport extends DeskDocument
 		photoSprite.cameras = cams.copy();
 		for (value in fieldValues)
 			value.cameras = cams.copy();
+	}
+
+	function scanBoundsForPartAt(point:FlxPoint):Null<ScanBounds>
+	{
+		for (i in 0...fieldValues.length)
+		{
+			var value = fieldValues[i];
+			if (!value.visible)
+				continue;
+
+			var tag = layout.fields[i].kind == Name ? BookScanActions.PASSPORT_NAME_TAG : null;
+			var bounds = textScanBounds(value, tag);
+			if (pointInScanBounds(point, bounds))
+				return bounds;
+		}
+		return null;
+	}
+
+	function textScanBounds(text:FlxText, ?tag:Null<String>):ScanBounds
+	{
+		var glyphW = text.textField.textWidth;
+		var glyphH = text.textField.textHeight;
+		return {
+			x: text.x,
+			y: text.y,
+			w: glyphW > 0 ? glyphW : text.width,
+			h: glyphH > 0 ? glyphH : text.height,
+			pad: FIELD_SCAN_PAD,
+			tag: tag
+		};
+	}
+
+	function pointInScanBounds(point:FlxPoint, bounds:ScanBounds):Bool
+	{
+		return point.x >= bounds.x && point.x < bounds.x + bounds.w
+			&& point.y >= bounds.y && point.y < bounds.y + bounds.h;
 	}
 }

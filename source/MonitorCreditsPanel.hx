@@ -95,7 +95,7 @@ class MonitorCreditsPanel extends FlxGroup
 			{kind: Name, text: "Viktar Syanau (MarySue)"},
 			{kind: Blank, text: ""},
 			{kind: Role, text: "Artist"},
-			{kind: Name, text: "TBD"},
+			{kind: Name, text: "Anush Kalivanjyan"},
 			{kind: Blank, text: ""},
 			{kind: Role, text: "Composer / Audio Effects"},
 			{kind: Name, text: "Bohdan Potomskyi (retipupu)"},
@@ -105,9 +105,13 @@ class MonitorCreditsPanel extends FlxGroup
 			{kind: Blank, text: ""},
 			{kind: Blank, text: ""},
 			{kind: Role, text: "Special Thanks to"},
+			{kind: Name, text: "Valeria Paziuk"},
 			{kind: Name, text: "Vadzim Trayeuski (HonieHomie)"},
 			{kind: Name, text: "Muhammad Bakanaev (Senshi)"},
-			{kind: Name, text: "Muzafar Bektas (horseatersson)"}
+			{kind: Name, text: "Muzafar Bektas (horseatersson)"},
+			{kind: Blank, text: ""},
+			{kind: Role, text: "Sounds"},
+			{kind: Name, text: "freesound.org"}
 		]);
 	}
 

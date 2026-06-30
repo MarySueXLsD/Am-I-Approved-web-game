@@ -4,7 +4,7 @@ class LoanChecklistItems
 {
 	public static function all():Array<LoanChecklistItem>
 	{
-		return [PassportCopy, NationalIdCopy, LoanApplicationForm, LoanChecklist];
+		return [IdOrPassportCopy, LoanApplicationForm, LoanChecklist];
 	}
 
 	public static function isComplete(stored:Array<DeskDocument>):Bool

@@ -5,12 +5,13 @@ import flixel.group.FlxGroup;
 
 class MainMenuTraffic extends FlxGroup
 {
-	static inline var TOP_LANE_Y_RATIO = 0.872;
-	static inline var BOTTOM_LANE_Y_RATIO = 0.948;
-	static inline var CAR_HEIGHT_RATIO = 0.082;
+	static inline var TOP_LANE_Y_RATIO = 0.825;
+	static inline var BOTTOM_LANE_Y_RATIO = 0.910;
+	static inline var CAR_HEIGHT_RATIO = 0.142;
+	static inline var BOTTOM_CAR_SCALE = 1.12;
 	static inline var SPAWN_MARGIN = 28.0;
-	static inline var MIN_SPEED = 148.0;
-	static inline var MAX_SPEED = 198.0;
+	static inline var MIN_SPEED = 800.0;
+	static inline var MAX_SPEED = 1000.0;
 	static inline var MIN_SPAWN_INTERVAL = 0.55;
 	static inline var MAX_SPAWN_INTERVAL = 1.45;
 	static inline var MIN_CAR_GAP = 1.65;
@@ -24,27 +25,35 @@ class MainMenuTraffic extends FlxGroup
 	];
 
 	var cars:Array<MainMenuTrafficCar> = [];
+	var topLaneLayer:FlxGroup;
+	var bottomLaneLayer:FlxGroup;
 	var sceneW = 800.0;
 	var sceneH = 600.0;
-	var carHeight = 50.0;
 	var running = false;
+	var fading = false;
+	var fadeElapsed = 0.0;
+	var fadeDuration = 0.0;
+	var fadeOnComplete:Void->Void;
 	var spawnTimer = 0.0;
 	var nextSpawnIn = 0.0;
 
 	public function new()
 	{
 		super();
+
+		topLaneLayer = new FlxGroup();
+		bottomLaneLayer = new FlxGroup();
+		add(topLaneLayer);
+		add(bottomLaneLayer);
 	}
 
 	public function layout(w:Float, h:Float):Void
 	{
 		sceneW = w;
 		sceneH = h;
-		carHeight = h * CAR_HEIGHT_RATIO;
-
 		for (car in cars)
 		{
-			car.resize(carHeight);
+			car.resize(carHeightFor(car.lane));
 			placeCarOnLane(car, car.lane);
 		}
 	}
@@ -59,15 +68,81 @@ class MainMenuTraffic extends FlxGroup
 
 	public function stopTraffic():Void
 	{
+		cancelFade();
+		fading = false;
 		running = false;
 		visible = false;
 		clearCars();
 		spawnTimer = 0;
 	}
 
+	public function beginFadeOut(duration:Float, ?onComplete:Void->Void):Void
+	{
+		if (!running && !fading)
+		{
+			if (onComplete != null)
+				onComplete();
+			return;
+		}
+
+		running = false;
+		fading = true;
+		fadeElapsed = 0;
+		fadeDuration = duration;
+		fadeOnComplete = onComplete;
+		visible = true;
+		applyCarAlpha(1);
+	}
+
+	public function resetFadeState():Void
+	{
+		cancelFade();
+		fading = false;
+		applyCarAlpha(1);
+	}
+
+	function finishFadeOut():Void
+	{
+		fading = false;
+		fadeOnComplete = null;
+		clearCars();
+		running = false;
+		visible = false;
+		spawnTimer = 0;
+	}
+
+	function cancelFade():Void
+	{
+		fadeOnComplete = null;
+		fadeElapsed = 0;
+		fadeDuration = 0;
+		applyCarAlpha(1);
+	}
+
+	function applyCarAlpha(value:Float):Void
+	{
+		for (car in cars)
+			car.alpha = value;
+	}
+
 	override function update(elapsed:Float):Void
 	{
 		super.update(elapsed);
+
+		if (fading)
+		{
+			fadeElapsed += elapsed;
+			var t = fadeDuration > 0 ? fadeElapsed / fadeDuration : 1;
+			applyCarAlpha(Math.max(0, 1 - t));
+
+			if (fadeElapsed >= fadeDuration)
+			{
+				var cb = fadeOnComplete;
+				finishFadeOut();
+				if (cb != null)
+					cb();
+			}
+		}
 
 		if (!running)
 			return;
@@ -135,7 +210,8 @@ class MainMenuTraffic extends FlxGroup
 
 	function spawnCar(path:String, lane:Int, dir:Int, speed:Float, trailGap:Float):Bool
 	{
-		var car = new MainMenuTrafficCar(path, dir, lane, speed, carHeight);
+		var height = carHeightFor(lane);
+		var car = new MainMenuTrafficCar(path, dir, lane, speed, height);
 		var carWidth = car.getTravelWidth();
 
 		if (!canSpawn(lane, dir, carWidth, trailGap))
@@ -152,9 +228,19 @@ class MainMenuTraffic extends FlxGroup
 		else
 			car.x = -carWidth - SPAWN_MARGIN - trailOffset;
 
-		add(car);
+		laneLayer(lane).add(car);
 		cars.push(car);
 		return true;
+	}
+
+	function carHeightFor(lane:Int):Float
+	{
+		return sceneH * CAR_HEIGHT_RATIO * (lane == 1 ? BOTTOM_CAR_SCALE : 1.0);
+	}
+
+	function laneLayer(lane:Int):FlxGroup
+	{
+		return lane == 0 ? topLaneLayer : bottomLaneLayer;
 	}
 
 	function canSpawn(lane:Int, dir:Int, carWidth:Float, trailGap:Float):Bool
@@ -192,14 +278,16 @@ class MainMenuTraffic extends FlxGroup
 	function removeCarAt(index:Int):Void
 	{
 		var car = cars[index];
-		remove(car, true);
+		car.destroy();
 		cars.splice(index, 1);
 	}
 
 	function clearCars():Void
 	{
 		for (car in cars)
-			remove(car, true);
+			car.destroy();
 		cars = [];
+		topLaneLayer.clear();
+		bottomLaneLayer.clear();
 	}
 }

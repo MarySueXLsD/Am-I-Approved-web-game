@@ -80,4 +80,5 @@ typedef Citizen = {
 	var passportDoc:CitizenPassportDocument;
 	var idCardDoc:CitizenIdCardDocument;
 	var employmentContractDoc:CitizenEmploymentContractDocument;
+	var visit:Dynamic;
 }

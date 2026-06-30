@@ -145,13 +145,14 @@ class PrinterPaperDocument extends DeskDocument
 			copyEmblemReady = idDoc.hasCopyEmblem();
 			if (copyEmblemReady)
 				rebuildCopyEmblemGraphic();
-			if (idDoc.getCitizenForCopy() != null)
+			var idPortraitPath = idDoc.getPortraitPathForCopy();
+			if (idPortraitPath != null)
 			{
 				copyPhotoReady = true;
 				copyPhotoGraphic = ClientPhotoCompositor.buildGrayPortrait(
 					Std.int(idCardLayout.photoW),
 					Std.int(idCardLayout.photoH),
-					ClientPortraits.pathForCitizen(idDoc.getCitizenForCopy())
+					idPortraitPath
 				);
 				copyPhotoSprite.loadGraphic(copyPhotoGraphic, false);
 				copyPhotoSprite.visible = false;
@@ -183,10 +184,8 @@ class PrinterPaperDocument extends DeskDocument
 	{
 		switch (item)
 		{
-			case PassportCopy:
-				return copyTextStyle == PassportLayout;
-			case NationalIdCopy:
-				return copyTextStyle == IdCardLayout;
+			case IdOrPassportCopy:
+				return copyTextStyle == PassportLayout || copyTextStyle == IdCardLayout;
 			case LoanApplicationForm:
 				return copyTextStyle == BankDocumentStyle
 					&& bankDocumentLayout != null

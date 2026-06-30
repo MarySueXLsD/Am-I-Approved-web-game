@@ -5,4 +5,5 @@ enum TerminalPrintJob
 	None;
 	LoanChecklist;
 	LoanApplicationForm;
+	ClientDetails;
 }

@@ -24,6 +24,10 @@ class MagnifyingGlass extends DeskDocument
 	var lensMask:Shape;
 	var maskAttached = false;
 	var forceHidden = false;
+	var lastMaskR = -1.0;
+	var lastMaskCx = -1.0;
+	var lastMaskCy = -1.0;
+	var lastMaskLensW = -1;
 
 	public function new(zones:LayoutZones, layer:FlxGroup)
 	{
@@ -79,10 +83,13 @@ class MagnifyingGlass extends DeskDocument
 		lensCam = new FlxCamera(0, 0, 10, 10, ZOOM);
 		lensCam.bgColor = 0x00000000;
 		FlxG.cameras.add(lensCam, false);
+		GameVisualFilter.excludeCamera(lensCam);
 
 		coverCam = new FlxCamera(0, 0, FlxG.width, FlxG.height, 1.0);
 		coverCam.bgColor = 0x00000000;
 		FlxG.cameras.add(coverCam, false);
+		GameVisualFilter.excludeCamera(coverCam);
+		GameVisualFilter.ensureAllCameras();
 
 		lensCam.visible = false;
 		coverCam.visible = false;
@@ -173,7 +180,6 @@ class MagnifyingGlass extends DeskDocument
 	{
 		super.update(elapsed);
 		syncLens();
-		syncDocumentLensCameras();
 	}
 
 	function syncDocumentLensCameras():Void
@@ -244,6 +250,7 @@ class MagnifyingGlass extends DeskDocument
 			lensCam.visible = false;
 			if (coverCam != null)
 				coverCam.visible = false;
+			lastMaskR = -1.0;
 			return;
 		}
 		lensCam.visible = true;
@@ -306,6 +313,15 @@ class MagnifyingGlass extends DeskDocument
 				cy = scrollRectChild.y + sr.height / (2.0 * ZOOM);
 			}
 		}
+
+		var lensW = lensCam.width;
+		if (r == lastMaskR && cx == lastMaskCx && cy == lastMaskCy && lensW == lastMaskLensW)
+			return;
+
+		lastMaskR = r;
+		lastMaskCx = cx;
+		lastMaskCy = cy;
+		lastMaskLensW = lensW;
 
 		lensMask.graphics.clear();
 		lensMask.graphics.beginFill(0xFFFFFF);

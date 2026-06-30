@@ -29,6 +29,7 @@ class MonitorLoanApplication extends FlxGroup
 
 	static var LOAN_TYPES:Array<String> = LoanProductRates.LOAN_PRODUCTS;
 	static var SECURITY_TYPES:Array<String> = LoanProductRates.SECURITY_TYPES;
+	static var SECURITY_DISPLAY_TYPES:Array<String> = LoanProductRates.SECURITY_DISPLAY_TYPES;
 
 	static inline var MAX_TERM = 360;
 	static inline var MAX_CALC_LINE_TEXTS = 28;
@@ -85,6 +86,7 @@ class MonitorLoanApplication extends FlxGroup
 
 	var focusedPath:Null<String> = null;
 	var keyHandler:KeyboardEvent->Void;
+	var keyListenerAttached = false;
 
 	var ddBg:FlxSprite;
 	var ddTxt:Array<FlxText> = [];
@@ -105,6 +107,7 @@ class MonitorLoanApplication extends FlxGroup
 	public var onPrintRequest:Void->Bool;
 	public var onPrintChecklistRequest:Void->Bool;
 	public var onSubmitForApprovalRequest:Void->Bool;
+	public var onApplicationSubmitted:Void->Void;
 	public var onInternalViewChanged:Void->Void;
 
 	public function new(appState:LoanApplicationState)
@@ -200,9 +203,154 @@ class MonitorLoanApplication extends FlxGroup
 		return view == LoanAppView.Menu;
 	}
 
+	public function isOnNewForm():Bool
+	{
+		return view == LoanAppView.NewForm;
+	}
+
+	public function getFocusedFieldPath():Null<String>
+	{
+		return focusedPath;
+	}
+
+	public function hasFieldValue(path:String):Bool
+	{
+		return StringTools.trim(getFieldDraft(path)).length > 0;
+	}
+
+	public function getFieldValue(path:String):String
+	{
+		return getFieldDraft(path);
+	}
+
+	public function getMonthlyPayment():Float
+	{
+		var calc = LoanAffordabilityCalculator.compute(collectFormData());
+		return calc.ready ? calc.monthlyPayment : 0;
+	}
+
+	public function isScrolledToBottom():Bool
+	{
+		if (!isFormScrollable())
+			return true;
+		return formScrollIndex >= maxFormScrollIndex();
+	}
+
+	public function isScrolledNearBottom():Bool
+	{
+		if (!isFormScrollable())
+			return true;
+		var maxScroll = maxFormScrollIndex();
+		if (maxScroll <= 0)
+			return true;
+		return formScrollIndex >= maxScroll - 1;
+	}
+
+	public function getAffordabilityVerdict():String
+	{
+		var calc = LoanAffordabilityCalculator.compute(collectFormData());
+		return calc.ready ? calc.verdict : "";
+	}
+
+	public function ensureCalcPaymentVisible():Void
+	{
+		for (slot in 0...scrollSlotCount())
+		{
+			if (slot < formEntries.length)
+				continue;
+			var calcSlot = slot - formEntries.length;
+			var lineIdx = calcSlot - 1;
+			if (lineIdx < 0 || lineIdx >= cachedCalcLines.length)
+				continue;
+			var parts = LoanAffordabilityCalculator.parseDataLine(cachedCalcLines[lineIdx]);
+			if (parts == null || parts.label != "Loan rate/mo")
+				continue;
+			formScrollIndex = Std.int(Math.min(slot, maxFormScrollIndex()));
+			layoutFormFields();
+			return;
+		}
+	}
+
+	public function getCalcPaymentBounds():Null<TutorialGuideRect>
+	{
+		for (slot in formScrollIndex...scrollSlotCount())
+		{
+			if (slot < formEntries.length)
+				continue;
+			var calcSlot = slot - formEntries.length;
+			var lineIdx = calcSlot - 1;
+			if (lineIdx < 0 || lineIdx >= cachedCalcLines.length)
+				continue;
+			var parts = LoanAffordabilityCalculator.parseDataLine(cachedCalcLines[lineIdx]);
+			if (parts == null || parts.label != "Loan rate/mo")
+				continue;
+			if (lineIdx < calcLineTexts.length && calcLineTexts[lineIdx].visible)
+			{
+				var line = calcLineTexts[lineIdx];
+				var value = lineIdx < calcValueTexts.length ? calcValueTexts[lineIdx] : null;
+				if (value != null && value.visible)
+				{
+					var x = Math.min(line.x, value.x);
+					var y = Math.min(line.y, value.y);
+					var right = Math.max(line.x + line.width, value.x + value.width);
+					var bottom = Math.max(line.y + line.height, value.y + value.height);
+					return {x: x, y: y, w: right - x, h: bottom - y};
+				}
+			}
+		}
+		return null;
+	}
+
+	public function getSubmitButtonBounds():Null<TutorialGuideRect>
+	{
+		if (!submitButton.visible)
+			return null;
+		return {x: submitButton.hit.x, y: submitButton.hit.y, w: submitButton.hit.width, h: submitButton.hit.height};
+	}
+
+	public function getScrollColumnBounds():Null<TutorialGuideRect>
+	{
+		if (!scrollColumn.visible)
+			return null;
+		return {x: scrollColumn.x, y: scrollColumn.y, w: scrollColumn.width, h: scrollColumn.height};
+	}
+
+	public function isMenuClick(px:Float, py:Float, index:Int):Bool
+	{
+		if (view != LoanAppView.Menu || index < 0 || index >= menuRows.length)
+			return false;
+		var row = menuRows[index];
+		return row.visible && row.hit.overlapsPoint(new FlxPoint(px, py));
+	}
+
+	public function getFieldBounds(path:String):Null<TutorialGuideRect>
+	{
+		var end = scrollSlotCount();
+		for (slot in formScrollIndex...end)
+		{
+			if (slot >= formEntries.length)
+				continue;
+			var field = formEntries[slot].getFieldRow(path);
+			if (field != null && field.visible)
+				return {x: field.hit.x, y: field.hit.y, w: field.hit.width, h: field.hit.height};
+		}
+		return null;
+	}
+
+	public function getMenuRowBounds(index:Int):Null<TutorialGuideRect>
+	{
+		if (view != LoanAppView.Menu || index < 0 || index >= menuRows.length)
+			return null;
+		var row = menuRows[index];
+		if (!row.visible)
+			return null;
+		return {x: row.hit.x, y: row.hit.y, w: row.hit.width, h: row.hit.height};
+	}
+
 	public function reset():Void
 	{
 		state.reset();
+		reopenDraftOnNextOpen = false;
 		showMenu();
 		clearForm();
 	}
@@ -510,6 +658,8 @@ class MonitorLoanApplication extends FlxGroup
 		if (!requireField(data.spendLiving, "Living / mo is required."))
 			return;
 		state.submit(data);
+		if (onApplicationSubmitted != null)
+			onApplicationSubmitted();
 		showSuccess(SUBMIT_SUCCESS_MSG, showMenu);
 	}
 
@@ -528,7 +678,7 @@ class MonitorLoanApplication extends FlxGroup
 		return {
 			nationalId: getFieldDraft("nationalId"),
 			loanType: getFieldDraft("loanType"),
-			security: getFieldDraft("security"),
+			security: LoanProductRates.normalizeSecurity(getFieldDraft("security")),
 			amount: getFieldDraft("amount"),
 			term: getFieldDraft("term"),
 			purpose: "",
@@ -1206,17 +1356,13 @@ class MonitorLoanApplication extends FlxGroup
 	function attachKeyListener():Void
 	{
 		var stage = Lib.current.stage;
-		if (stage == null)
-			return;
-		stage.addEventListener(KeyboardEvent.KEY_DOWN, keyHandler, false, 0, true);
+		keyListenerAttached = MonitorKeyboard.attach(stage, keyHandler, keyListenerAttached);
 	}
 
 	function detachKeyListener():Void
 	{
 		var stage = Lib.current.stage;
-		if (stage == null)
-			return;
-		stage.removeEventListener(KeyboardEvent.KEY_DOWN, keyHandler);
+		keyListenerAttached = MonitorKeyboard.detach(stage, keyHandler, keyListenerAttached);
 	}
 
 	function onKeyDown(e:KeyboardEvent):Void
@@ -1251,18 +1397,20 @@ class MonitorLoanApplication extends FlxGroup
 			if (draft.length > 0)
 				row.setDraft(draft.substr(0, draft.length - 1));
 		}
-		else if (e.charCode > 32)
+		else
 		{
-			var code = e.charCode;
+			var ch = MonitorKeyboard.typedCharacter(e);
+			if (ch == null)
+				return;
+
 			if (row.digitsOnly)
 			{
-				if (!MonitorDetailFieldRow.acceptsNumericChar(code, row.getDraft(), row.allowDecimal))
+				if (!MonitorDetailFieldRow.acceptsNumericChar(ch.charCodeAt(0), row.getDraft(), row.allowDecimal))
 				{
 					e.stopImmediatePropagation();
 					return;
 				}
 			}
-			var ch = String.fromCharCode(code);
 			var newDraft = row.getDraft() + ch;
 			if (row.path == "term")
 				newDraft = capTermDraft(newDraft);
@@ -1273,8 +1421,6 @@ class MonitorLoanApplication extends FlxGroup
 			}
 			row.setDraft(newDraft);
 		}
-		else
-			return;
 
 		e.stopImmediatePropagation();
 		layoutFormFields();
@@ -1346,7 +1492,41 @@ class MonitorLoanApplication extends FlxGroup
 		ddPath = row.path;
 		ddChoices = row.getChoices();
 		ddCurrentValue = row.getDraft();
+		ensureFieldRoomForDropdown(row.path);
+		row = getRowByPath(row.path);
+		if (row == null)
+		{
+			closeDropdown();
+			return;
+		}
 		layoutDropdownUnderRow(row);
+	}
+
+	function ensureFieldRoomForDropdown(path:String):Void
+	{
+		var slot = findFormSlotForPath(path);
+		if (slot < 0)
+			return;
+
+		var visible = scrollSlotCount() - formScrollIndex;
+		var slotsNeeded = 3;
+		if (slot < formScrollIndex)
+			formScrollIndex = slot;
+		else if (slot >= formScrollIndex + visible - 1)
+			formScrollIndex = Std.int(Math.min(maxFormScrollIndex(), Math.max(0, slot - slotsNeeded + 2)));
+
+		clampFormScroll();
+		layoutFormFields();
+	}
+
+	function findFormSlotForPath(path:String):Int
+	{
+		for (slot in 0...formEntries.length)
+		{
+			if (formEntries[slot].getFieldRow(path) != null)
+				return slot;
+		}
+		return -1;
 	}
 
 	function layoutDropdownUnderRow(row:MonitorDetailFieldRow):Void
@@ -1367,28 +1547,26 @@ class MonitorLoanApplication extends FlxGroup
 			ddW = row.hit.width;
 		}
 
-		var maxDropH = panelBottom - (row.hit.y + row.hit.height);
-		if (maxDropH < ddItemH + pad * 2)
+		var neededH = ddChoices.length * ddItemH + pad * 2;
+		var spaceBelow = panelBottom - (row.hit.y + row.hit.height);
+		var spaceAbove = row.hit.y - panelTop;
+		if (spaceBelow < neededH && spaceAbove >= neededH)
+			ddY = row.hit.y - neededH;
+		else if (spaceBelow < neededH && spaceAbove < neededH)
 		{
 			closeDropdown();
 			return;
 		}
+		else
+			ddY = row.hit.y + row.hit.height;
+
+		if (ddY < panelTop)
+			ddY = panelTop;
+		if (ddY + neededH > panelBottom)
+			ddY = panelBottom - neededH;
 
 		ddVisibleCount = ddChoices.length;
-		var listH = ddVisibleCount * ddItemH + pad * 2;
-		if (listH > maxDropH)
-		{
-			ddVisibleCount = Std.int(Math.max(1, Math.floor((maxDropH - pad * 2) / ddItemH)));
-			listH = ddVisibleCount * ddItemH + pad * 2;
-		}
-
-		ddY = row.hit.y + row.hit.height;
-		if (ddY + listH > panelBottom)
-		{
-			var aboveY = row.hit.y - listH;
-			if (aboveY >= panelTop)
-				ddY = aboveY;
-		}
+		var listH = neededH;
 
 		ddBg.setPosition(ddX, ddY);
 		ddBg.makeGraphic(Std.int(ddW), listH, 0xFF0A120E, true);
@@ -1575,16 +1753,16 @@ class MonitorLoanApplication extends FlxGroup
 			loanField("term", "TERM (MONTHS)", true, false, true), ""
 		);
 		formEntries[2].setupPair(
-			loanField("declaredSalary", "MONTHLY SALARY (LOR)", true, false, true, false, null, true), "",
-			loanField("security", "SECURITY", false, true, true, false, SECURITY_TYPES), ""
+			loanField("declaredSalary", "MONTHLY SALARY", true, false, true, false, null, true), "",
+			loanField("security", "SECURITY", false, true, true, false, SECURITY_DISPLAY_TYPES), ""
 		);
 		formEntries[3].setupPair(
 			loanField("spendHousing", "HOUSING / MO", true, false, true), "",
 			loanField("spendLiving", "LIVING / MO", true, false, true), ""
 		);
 		formEntries[4].setupPair(
-			loanField("spendOther", "OTHER SPENDING / MO", true, false, false), "",
-			loanField("spendTotal", "TOTAL SPENDING / MO", false, false, false, true), ""
+			loanField("spendOther", "OTHER / MO", true, false, false), "",
+			loanField("spendTotal", "TOTAL / MO", false, false, false, true), ""
 		);
 	}
 

@@ -5,6 +5,8 @@ import flixel.FlxSprite;
 import flixel.group.FlxGroup;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
+import flixel.tweens.FlxEase;
+import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
 
 class BookDocument extends DeskDocument
@@ -23,17 +25,14 @@ class BookDocument extends DeskDocument
 	static var TOC_LINK_LABELS = [
 		"Introduction",
 		"Questions to ask",
-		"Exchange Rates",
-		"Savings Accounts",
-		"Verification",
-		"Wire Transfers",
-		"Interest Rates"
+		"Quick Reference",
+		"Exchange Rates"
 	];
-	static var TOC_LINK_PAGES = [3, 30, 92, 18, 34, 64, 108];
-	static var TOC_LINK_SPREADS = [1, 14, 45, 8, 16, 31, 53];
+	static var TOC_LINK_PAGES = [3, 31, 33, 92];
+	static var TOC_LINK_SPREADS = [1, 15, 16, 45];
 	static var TOC_SUBTITLES = [
 		{beforeLinkIndex: 0, text: "New Employees"},
-		{beforeLinkIndex: 5, text: "SOP Instructions"}
+		{beforeLinkIndex: 2, text: "Loan Processing"}
 	];
 
 	// Cover page (left page of first spread). Positive bias shifts content toward the spine/right.
@@ -69,6 +68,13 @@ class BookDocument extends DeskDocument
 	static inline var NAV_ROW_NY1 = 0.92;
 	static inline var LEFT_ARROW_NX0 = 0.18;
 	static inline var LEFT_ARROW_NX1 = 0.32;
+	static inline var CONTENTS_BUTTON_NX0 = 0.34;
+	static inline var CONTENTS_BUTTON_NX1 = 0.58;
+	static inline var CONTENTS_BUTTON_LABEL = "Contents";
+	static inline var CONTENTS_BUTTON_FONT_RATIO = 0.015;
+	static inline var CONTENTS_BUTTON_PAD_TOP_RATIO = 0.22;
+	static inline var CONTENTS_BUTTON_PAD_BOTTOM_RATIO = 0.55;
+	static inline var CONTENTS_BUTTON_MIN_ROW_RATIO = 0.62;
 	static inline var RIGHT_ARROW_NX0 = 0.68;
 	static inline var RIGHT_ARROW_NX1 = 0.82;
 	static inline var LEFT_LABEL_NX0 = 0.58;
@@ -93,7 +99,7 @@ class BookDocument extends DeskDocument
 	static inline var INTRO_BODY_COLOR = 0xFF2A2218;
 	static inline var INTRO_CAPTION_COLOR = 0xFF5A5048;
 	static inline var INTRO_SECTION_COLOR = 0xFF4A4438;
-	static inline var INTRO_QUESTION_COLOR = 0xFF1A4F62;
+	static inline var INTRO_QUESTION_COLOR = 0xFF6B4423;
 	static inline var INTRO_SECTION_SIZE_RATIO = 0.03;
 	static inline var INTRO_MIN_SECTION_SIZE = 10;
 	static inline var MAX_BULLETS_PER_PAGE = 12;
@@ -115,6 +121,10 @@ class BookDocument extends DeskDocument
 	var tocLinkPageLabels:Array<FlxText>;
 	var backArrow:FlxSprite;
 	var forwardArrow:FlxSprite;
+	var contentsNavButton:FlxSprite;
+	var contentsNavLabel:FlxText;
+	var contentsNavLayout:{w:Int, h:Int, radius:Int, border:Int};
+	var contentsNavHovered = false;
 	var leftIntroTitle:FlxText;
 	var leftIntroBody:FlxText;
 	var leftIntroCaption:FlxText;
@@ -130,6 +140,14 @@ class BookDocument extends DeskDocument
 	var spreadIndex = 0;
 	var overlaysShown = false;
 	var tocLinkHovered = -1;
+	var tutorialInteractionLock = false;
+	var hidePassportBookQuestion = false;
+	var allowedTocLinkIndex = -1;
+	var bookSlideTween:FlxTween;
+	public var isBookSlideAnimating(default, null) = false;
+	public var isBookSlideComplete(default, null) = false;
+	public var slideAboveTableDocs(default, null) = false;
+	var lastOverlayLayoutKey = -1.0;
 
 	public function new(zones:LayoutZones, layer:FlxGroup)
 	{
@@ -222,6 +240,15 @@ class BookDocument extends DeskDocument
 		forwardArrow.visible = false;
 		loadForwardArrowGraphic();
 		textLayer.add(forwardArrow);
+
+		contentsNavButton = new FlxSprite();
+		contentsNavButton.visible = false;
+		textLayer.add(contentsNavButton);
+
+		contentsNavLabel = new FlxText(0, 0, 0, CONTENTS_BUTTON_LABEL);
+		contentsNavLabel.wordWrap = false;
+		contentsNavLabel.visible = false;
+		textLayer.add(contentsNavLabel);
 
 		leftIntroTitle = createIntroText(true);
 		leftIntroBody = createIntroText(false);
@@ -445,6 +472,16 @@ class BookDocument extends DeskDocument
 			forwardArrow.destroy();
 			forwardArrow = null;
 		}
+		if (contentsNavButton != null)
+		{
+			contentsNavButton.destroy();
+			contentsNavButton = null;
+		}
+		if (contentsNavLabel != null)
+		{
+			contentsNavLabel.destroy();
+			contentsNavLabel = null;
+		}
 		if (coverEmblem != null)
 		{
 			coverEmblem.destroy();
@@ -577,9 +614,6 @@ class BookDocument extends DeskDocument
 		for (link in tocLinks)
 			if (link.visible && link.overlapsPoint(point))
 				return true;
-		for (pageLabel in tocLinkPageLabels)
-			if (pageLabel.visible && pageLabel.overlapsPoint(point))
-				return true;
 
 		if (leftIntroTitle.visible && leftIntroTitle.overlapsPoint(point))
 			return true;
@@ -607,18 +641,247 @@ class BookDocument extends DeskDocument
 
 		if (backArrow.visible && backArrow.overlapsPoint(point))
 			return true;
+		if (contentsNavButton.visible && contentsNavButton.overlapsPoint(point))
+			return true;
 		if (forwardArrow.visible && forwardArrow.overlapsPoint(point))
 			return true;
 
 		return false;
 	}
 
+	public function setTutorialInteractionLock(locked:Bool, ?allowedTocIndex:Int = -1):Void
+	{
+		tutorialInteractionLock = locked;
+		allowedTocLinkIndex = allowedTocIndex;
+	}
+
+	public function setHidePassportBookQuestion(hide:Bool):Void
+	{
+		if (hidePassportBookQuestion == hide)
+			return;
+
+		hidePassportBookQuestion = hide;
+		if (isOpen)
+			refreshOverlaysNow();
+	}
+
+	function filterBullets(bullets:Array<{?id:Null<String>, text:String}>):Array<{?id:Null<String>, text:String}>
+	{
+		if (!hidePassportBookQuestion)
+			return bullets;
+
+		var filtered:Array<{?id:Null<String>, text:String}> = [];
+		for (entry in bullets)
+		{
+			if (entry.id == "passport_request")
+				continue;
+			filtered.push(entry);
+		}
+		return filtered;
+	}
+
+	public function isOnQuestionsSpread():Bool
+	{
+		return spreadIndex == 15;
+	}
+
+	public function openToQuestionsSpread():Void
+	{
+		spreadIndex = 15;
+		setOpen();
+		refreshDisplaySize();
+		refreshOverlaysNow();
+	}
+
+	public function resetForNewDay():Void
+	{
+		resetBookSlideState();
+		hideFromDesk();
+	}
+
+	public function placeClosedOnClientTable():Void
+	{
+		resetBookSlideState();
+		prepareClientHandoff();
+		placeOnClientTable();
+		angle = 0;
+	}
+
+	function resetBookSlideState():Void
+	{
+		if (bookSlideTween != null)
+		{
+			bookSlideTween.cancel();
+			bookSlideTween = null;
+		}
+		FlxTween.cancelTweensOf(this);
+		dragging = false;
+		snapping = false;
+		scanLocked = false;
+		isBookSlideAnimating = false;
+		isBookSlideComplete = false;
+		slideAboveTableDocs = false;
+		spreadIndex = 0;
+		tutorialInteractionLock = false;
+		allowedTocLinkIndex = -1;
+		tocLinkHovered = -1;
+	}
+
+	public function slideOpenToEmployerTableCenter(?onComplete:Void->Void):Void
+	{
+		if (bookSlideTween != null)
+		{
+			bookSlideTween.cancel();
+			bookSlideTween = null;
+		}
+		FlxTween.cancelTweensOf(this);
+		dragging = false;
+		snapping = false;
+		scanLocked = false;
+		visible = true;
+		isBookSlideAnimating = true;
+		isBookSlideComplete = false;
+		slideAboveTableDocs = true;
+		spreadIndex = 0;
+
+		activeZone = EmployerTable;
+		setOpen();
+		refreshDisplaySize();
+
+		var endCenterX = zones.employerX + zones.employerW * 0.5;
+		var endCenterY = zones.employerTableY + zones.employerTableH * 0.5;
+		var targetX = endCenterX - width * 0.5;
+		var targetY = endCenterY - height * 0.5;
+		setPosition(FlxG.width + width, targetY);
+		notifyDrawLayerChanged();
+
+		bookSlideTween = FlxTween.tween(this, {
+			x: targetX,
+			y: targetY
+		}, 0.75, {
+			ease: FlxEase.quadOut,
+			onComplete: function(_)
+			{
+				bookSlideTween = null;
+				setPosition(endCenterX - width * 0.5, endCenterY - height * 0.5);
+				updateEmployerTableClip();
+				refreshOverlaysNow();
+				isBookSlideAnimating = false;
+				isBookSlideComplete = true;
+				slideAboveTableDocs = false;
+				notifyDrawLayerChanged();
+				if (onComplete != null)
+					onComplete();
+			}
+		});
+	}
+
+	public function getTutorialHighlight(kind:String):Null<TutorialGuideRect>
+	{
+		return switch (kind)
+		{
+			case "toc_questions_to_ask":
+				getTocLinkHighlight(1);
+			case "questions_area":
+				getQuestionsAreaHighlight();
+			case "first_question":
+				getFirstQuestionHighlight();
+			case "book_frame":
+				if (!isOpenOnEmployerTable())
+					null;
+				else
+					{x: x, y: y, w: width, h: height};
+			default:
+				null;
+		}
+	}
+
+	function getTocLinkHighlight(index:Int):Null<TutorialGuideRect>
+	{
+		if (!isOnCoverSpread() || index < 0 || index >= tocLinkButtons.length)
+			return null;
+		var btn = tocLinkButtons[index];
+		if (!btn.visible)
+			return null;
+		return {x: btn.x, y: btn.y, w: btn.width, h: btn.height};
+	}
+
+	function getQuestionsAreaHighlight():Null<TutorialGuideRect>
+	{
+		if (!isOnQuestionsSpread())
+			return null;
+		return unionBulletHighlights(true);
+	}
+
+	function getFirstQuestionHighlight():Null<TutorialGuideRect>
+	{
+		if (!isOnQuestionsSpread())
+			return null;
+		for (i in 0...leftBulletTexts.length)
+		{
+			var bullet = leftBulletTexts[i];
+			var tag = leftBulletTags[i];
+			if (!bullet.visible || tag == null)
+				continue;
+			var bounds = textScanBounds(bullet, tag);
+			return {x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h};
+		}
+		for (i in 0...rightBulletTexts.length)
+		{
+			var bullet = rightBulletTexts[i];
+			var tag = rightBulletTags[i];
+			if (!bullet.visible || tag == null)
+				continue;
+			var bounds = textScanBounds(bullet, tag);
+			return {x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h};
+		}
+		return null;
+	}
+
+	function unionBulletHighlights(includeHeaders:Bool):Null<TutorialGuideRect>
+	{
+		var minX = 1e9;
+		var minY = 1e9;
+		var maxX = -1e9;
+		var maxY = -1e9;
+		var found = false;
+
+		function consider(text:FlxText, tag:Null<String>):Void
+		{
+			if (!text.visible)
+				return;
+			if (!includeHeaders && tag == null)
+				return;
+			var bounds = textScanBounds(text, tag);
+			minX = Math.min(minX, bounds.x);
+			minY = Math.min(minY, bounds.y);
+			maxX = Math.max(maxX, bounds.x + bounds.w);
+			maxY = Math.max(maxY, bounds.y + bounds.h);
+			found = true;
+		}
+
+		for (i in 0...leftBulletTexts.length)
+			consider(leftBulletTexts[i], leftBulletTags[i]);
+		for (i in 0...rightBulletTexts.length)
+			consider(rightBulletTexts[i], rightBulletTags[i]);
+
+		if (!found)
+			return null;
+		return {x: minX, y: minY, w: maxX - minX, h: maxY - minY};
+	}
+
 	public function canBeginDragAt(point:FlxPoint):Bool
 	{
+		if (tutorialInteractionLock)
+			return false;
+
 		if (!isOpenOnEmployerTable())
 			return true;
 
 		if (canGoBack() && pointInBackArrowRegion(point))
+			return false;
+
+		if (shouldShowContentsNav() && pointInContentsNavRegion(point))
 			return false;
 
 		if (canGoForward() && pointInForwardArrowRegion(point))
@@ -636,6 +899,9 @@ class BookDocument extends DeskDocument
 			return super.resolveScanBoundsAt(point);
 
 		if (canGoBack() && pointInBackArrowRegion(point))
+			return null;
+
+		if (shouldShowContentsNav() && pointInContentsNavRegion(point))
 			return null;
 
 		if (canGoForward() && pointInForwardArrowRegion(point))
@@ -728,6 +994,8 @@ class BookDocument extends DeskDocument
 			textLayer.remove(pageLabel, true);
 		textLayer.remove(backArrow, true);
 		textLayer.remove(forwardArrow, true);
+		textLayer.remove(contentsNavButton, true);
+		textLayer.remove(contentsNavLabel, true);
 		removeIntroOverlaysFromLayer(textLayer);
 		if (layer.members.indexOf(this) >= 0)
 			layer.remove(this, true);
@@ -753,6 +1021,8 @@ class BookDocument extends DeskDocument
 			target.add(pageLabel);
 		target.add(backArrow);
 		target.add(forwardArrow);
+		target.add(contentsNavButton);
+		target.add(contentsNavLabel);
 		addIntroOverlaysToLayer(target);
 	}
 
@@ -774,6 +1044,11 @@ class BookDocument extends DeskDocument
 	function canGoBack():Bool
 	{
 		return spreadIndex > 0;
+	}
+
+	function shouldShowContentsNav():Bool
+	{
+		return spreadIndex >= 1;
 	}
 
 	function canGoForward():Bool
@@ -807,6 +1082,21 @@ class BookDocument extends DeskDocument
 
 	function tryHandlePageClick(point:FlxPoint):Bool
 	{
+		if (tutorialInteractionLock)
+		{
+			if (isOnCoverSpread())
+			{
+				var lockedLink = pointInTocLinkRegion(point);
+				if (lockedLink == allowedTocLinkIndex && lockedLink >= 0 && lockedLink < TOC_LINK_SPREADS.length)
+				{
+					spreadIndex = TOC_LINK_SPREADS[lockedLink];
+					updateOverlays();
+					return true;
+				}
+			}
+			return false;
+		}
+
 		if (isOnCoverSpread())
 		{
 			var linkIndex = pointInTocLinkRegion(point);
@@ -832,7 +1122,19 @@ class BookDocument extends DeskDocument
 			return true;
 		}
 
+		if (shouldShowContentsNav() && pointInContentsNavRegion(point))
+		{
+			spreadIndex = 0;
+			updateOverlays();
+			return true;
+		}
+
 		return false;
+	}
+
+	function pointInContentsNavRegion(point:FlxPoint):Bool
+	{
+		return pointInPageNavRegion(point, false, CONTENTS_BUTTON_NX0, CONTENTS_BUTTON_NX1);
 	}
 
 	function pointInTocLinkRegion(point:FlxPoint):Int
@@ -909,12 +1211,26 @@ class BookDocument extends DeskDocument
 		forwardArrow.flipX = false;
 	}
 
-	function updateOverlays():Void
+	public function refreshOverlaysNow():Void
 	{
-		if (DeskDocument.blocksOverlayUpdates())
+		lastOverlayLayoutKey = -1.0;
+		updateOverlays(true);
+	}
+
+	function shouldKeepOverlaysDuringBlock():Bool
+	{
+		return isOpen && activeZone == EmployerTable && BeginningDayOverlay.isGameRevealInProgress();
+	}
+
+	function updateOverlays(?force:Bool = false):Void
+	{
+		if (!force && DeskDocument.blocksOverlayUpdates())
 		{
-			hideOverlays();
-			return;
+			if (!shouldKeepOverlaysDuringBlock())
+			{
+				hideOverlays();
+				return;
+			}
 		}
 
 		if (isOpenOnEmployerTable())
@@ -946,6 +1262,8 @@ class BookDocument extends DeskDocument
 				pageLabel.visible = showCover;
 			backArrow.visible = shouldShow && canGoBack();
 			forwardArrow.visible = shouldShow && canGoForward();
+			contentsNavButton.visible = shouldShow && shouldShowContentsNav();
+			contentsNavLabel.visible = shouldShow && shouldShowContentsNav();
 		}
 		else if (shouldShow)
 		{
@@ -967,52 +1285,93 @@ class BookDocument extends DeskDocument
 				pageLabel.visible = showCover;
 			backArrow.visible = canGoBack();
 			forwardArrow.visible = canGoForward();
+			contentsNavButton.visible = shouldShowContentsNav();
+			contentsNavLabel.visible = shouldShowContentsNav();
 		}
 
 		if (!shouldShow)
 		{
+			lastOverlayLayoutKey = -1.0;
 			hideIntroOverlays();
 			clearAllOverlayClips();
 			return;
 		}
 
-		ensureOverlaysOnTop();
-		if (showCover)
+		var layoutKey = x + y * 10000 + width * 100 + height + spreadIndex * 1000000 + (showCover ? 1 : 0);
+		if (layoutKey != lastOverlayLayoutKey)
 		{
-			layoutCoverPage();
-			layoutTocLinks();
-			layoutRightPageLabel();
-			hideIntroOverlays();
+			lastOverlayLayoutKey = layoutKey;
+
+			ensureOverlaysOnTop();
+			if (showCover)
+			{
+				layoutCoverPage();
+				layoutTocLinks();
+				layoutRightPageLabel();
+				hideIntroOverlays();
+			}
+			else
+			{
+				tocLinkHovered = -1;
+				contentsNavHovered = false;
+				coverEmblem.visible = false;
+				coverTitlePrimary.visible = false;
+				coverTitleSecondary.visible = false;
+				coverSubtitle.visible = false;
+				coverSponsor.visible = false;
+				tocHeading.visible = false;
+				for (subtitle in tocSubtitleLabels)
+					subtitle.visible = false;
+				for (button in tocLinkButtons)
+					button.visible = false;
+				for (link in tocLinks)
+					link.visible = false;
+				for (pageLabel in tocLinkPageLabels)
+					pageLabel.visible = false;
+				hideIntroOverlays();
+				layoutPageLabels();
+				layoutIntroPages();
+			}
+			layoutBackArrow();
+			layoutContentsNavButton();
+			layoutForwardArrow();
+		}
+
+		updateBookLinkHover(FlxG.mouse.getViewPosition());
+	}
+
+	function updateBookLinkHover(mouse:FlxPoint):Void
+	{
+		if (!overlaysShown)
+			return;
+
+		if (isOnCoverSpread())
+		{
+			if (contentsNavHovered)
+			{
+				contentsNavHovered = false;
+				if (contentsNavButton.visible)
+					applyContentsNavVisual(false);
+			}
+			updateTocLinkHover(mouse);
 		}
 		else
 		{
-			tocLinkHovered = -1;
-			coverEmblem.visible = false;
-			coverTitlePrimary.visible = false;
-			coverTitleSecondary.visible = false;
-			coverSubtitle.visible = false;
-			coverSponsor.visible = false;
-			tocHeading.visible = false;
-			for (subtitle in tocSubtitleLabels)
-				subtitle.visible = false;
-			for (button in tocLinkButtons)
-				button.visible = false;
-			for (link in tocLinks)
-				link.visible = false;
-			for (pageLabel in tocLinkPageLabels)
-				pageLabel.visible = false;
-			hideIntroOverlays();
-			layoutPageLabels();
-			layoutIntroPages();
+			if (tocLinkHovered >= 0)
+			{
+				applyTocLinkVisual(tocLinkHovered, false);
+				tocLinkHovered = -1;
+			}
+			updateContentsNavHover(mouse);
 		}
-		layoutBackArrow();
-		layoutForwardArrow();
 	}
 
 	function hideOverlays():Void
 	{
 		tocLinkHovered = -1;
+		contentsNavHovered = false;
 		overlaysShown = false;
+		lastOverlayLayoutKey = -1.0;
 		leftPageLabel.visible = false;
 		rightPageLabel.visible = false;
 		coverEmblem.visible = false;
@@ -1031,6 +1390,8 @@ class BookDocument extends DeskDocument
 			pageLabel.visible = false;
 		backArrow.visible = false;
 		forwardArrow.visible = false;
+		contentsNavButton.visible = false;
+		contentsNavLabel.visible = false;
 		hideIntroOverlays();
 		clearAllOverlayClips();
 	}
@@ -1055,6 +1416,8 @@ class BookDocument extends DeskDocument
 			pageLabel.clipRect = null;
 		backArrow.clipRect = null;
 		forwardArrow.clipRect = null;
+		contentsNavButton.clipRect = null;
+		contentsNavLabel.clipRect = null;
 		leftIntroTitle.clipRect = null;
 		leftIntroBody.clipRect = null;
 		leftIntroCaption.clipRect = null;
@@ -1221,6 +1584,7 @@ class BookDocument extends DeskDocument
 		var textColor = hovered ? TOC_LINK_TEXT_HOVER : TOC_LINK_TEXT_COLOR;
 		drawRoundedTocLinkButton(button, layout.w, layout.h, layout.radius, layout.border, hovered);
 		link.color = textColor;
+
 	}
 
 	function tocLinkEntryHitsPoint(index:Int, point:FlxPoint):Bool
@@ -1405,7 +1769,6 @@ class BookDocument extends DeskDocument
 			nextLinkY = buttonY + buttonH + linkRowGap;
 		}
 
-		updateTocLinkHover(FlxG.mouse.getViewPosition());
 	}
 
 	function syncBookOverlayClip(overlay:FlxSprite):Void
@@ -1668,7 +2031,7 @@ class BookDocument extends DeskDocument
 		syncIntroOverlayClip(title, pageLeft, pageRight, contentBottom);
 		cursorY += title.height + titleSize * 0.5;
 
-		var bullets = BookIntroPages.getBullets(pageNum);
+		var bullets = filterBullets(BookIntroPages.getBullets(pageNum));
 		clearBulletTags(bulletTags);
 		for (i in 0...bulletTexts.length)
 		{
@@ -1775,6 +2138,89 @@ class BookDocument extends DeskDocument
 		layoutPageArrow(backArrow, false, LEFT_ARROW_NX0, LEFT_ARROW_NX1, canGoBack());
 	}
 
+	function applyContentsNavVisual(hovered:Bool):Void
+	{
+		if (contentsNavButton == null || contentsNavLabel == null)
+			return;
+
+		drawRoundedTocLinkButton(
+			contentsNavButton,
+			contentsNavLayout.w,
+			contentsNavLayout.h,
+			contentsNavLayout.radius,
+			contentsNavLayout.border,
+			hovered
+		);
+		contentsNavLabel.color = hovered ? TOC_LINK_TEXT_HOVER : TOC_LINK_TEXT_COLOR;
+	}
+
+	function updateContentsNavHover(mouse:FlxPoint):Void
+	{
+		var hovered = shouldShowContentsNav()
+			&& contentsNavButton.visible
+			&& contentsNavButton.overlapsPoint(mouse);
+		if (hovered == contentsNavHovered)
+			return;
+
+		if (contentsNavHovered)
+			applyContentsNavVisual(false);
+
+		contentsNavHovered = hovered;
+
+		if (contentsNavHovered)
+			applyContentsNavVisual(true);
+	}
+
+	function layoutContentsNavButton():Void
+	{
+		if (!shouldShowContentsNav())
+		{
+			contentsNavHovered = false;
+			contentsNavButton.visible = false;
+			contentsNavLabel.visible = false;
+			contentsNavButton.clipRect = null;
+			contentsNavLabel.clipRect = null;
+			return;
+		}
+
+		var sx = Math.abs(scale.x);
+		var sy = Math.abs(scale.y);
+		var halfW = frameWidth * 0.5;
+		var linkFontSize = Std.int(Math.max(7, frameHeight * sy * CONTENTS_BUTTON_FONT_RATIO));
+		var borderSize = Std.int(Math.max(1, sx));
+		var buttonW = Std.int(Math.max(1, halfW * (CONTENTS_BUTTON_NX1 - CONTENTS_BUTTON_NX0) * sx));
+		var rowH = frameHeight * (NAV_ROW_NY1 - NAV_ROW_NY0) * sy;
+		var textButtonH = linkFontSize + linkFontSize * (CONTENTS_BUTTON_PAD_TOP_RATIO + CONTENTS_BUTTON_PAD_BOTTOM_RATIO);
+		var buttonH = Std.int(Math.max(1, Math.max(textButtonH, rowH * CONTENTS_BUTTON_MIN_ROW_RATIO)));
+		buttonH = Std.int(Math.min(rowH, buttonH));
+		var cornerRadius = Std.int(Math.min(buttonH * 0.42, Math.max(3, linkFontSize * 0.45)));
+		contentsNavLayout = {w: buttonW, h: buttonH, radius: cornerRadius, border: borderSize};
+
+		var boxX = x + halfW * CONTENTS_BUTTON_NX0 * sx;
+		var rowY = y + frameHeight * NAV_ROW_NY0 * sy;
+		var boxY = rowY + (rowH - buttonH) * 0.5;
+
+		applyContentsNavVisual(contentsNavHovered);
+		contentsNavButton.visible = overlaysShown;
+		contentsNavButton.setPosition(boxX, boxY);
+		contentsNavButton.angle = angle;
+		syncBookOverlayClip(contentsNavButton);
+
+		contentsNavLabel.text = CONTENTS_BUTTON_LABEL;
+		contentsNavLabel.setFormat(null, linkFontSize, contentsNavHovered ? TOC_LINK_TEXT_HOVER : TOC_LINK_TEXT_COLOR, "center");
+		contentsNavLabel.setBorderStyle(NONE, 0x00000000, 0);
+		contentsNavLabel.bold = false;
+		contentsNavLabel.wordWrap = false;
+		contentsNavLabel.autoSize = false;
+		contentsNavLabel.fieldWidth = buttonW;
+		contentsNavLabel.width = buttonW;
+		contentsNavLabel.height = buttonH;
+		contentsNavLabel.updateHitbox();
+		contentsNavLabel.visible = overlaysShown;
+		contentsNavLabel.setPosition(boxX, boxY + (buttonH - linkFontSize) * 0.5);
+		syncBookOverlayClip(contentsNavLabel);
+	}
+
 	function layoutForwardArrow():Void
 	{
 		layoutPageArrow(forwardArrow, true, RIGHT_ARROW_NX0, RIGHT_ARROW_NX1, canGoForward());
@@ -1857,6 +2303,8 @@ class BookDocument extends DeskDocument
 			overlays.push(cast bullet);
 		overlays.push(backArrow);
 		overlays.push(forwardArrow);
+		overlays.push(contentsNavButton);
+		overlays.push(cast contentsNavLabel);
 		for (overlay in overlays)
 		{
 			var overlayIndex = textLayer.members.indexOf(overlay);
@@ -1905,5 +2353,7 @@ class BookDocument extends DeskDocument
 			bullet.cameras = cams.copy();
 		backArrow.cameras = cams.copy();
 		forwardArrow.cameras = cams.copy();
+		contentsNavButton.cameras = cams.copy();
+		contentsNavLabel.cameras = cams.copy();
 	}
 }
