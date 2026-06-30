@@ -21,7 +21,6 @@ Clients arrive at your desk with stories, passports, and paperwork that does not
 - Retro bank terminal with citizen search, loan applications, and calculators
 - Tutorial and employee handbook to walk you through day one
 - A fully stocked desk: printer, shredder, calculator, loan folder, magnifying glass, and too much paperwork
-- Pixel-art desk sim at 800×600
 
 ## Screenshots
 
