@@ -78,6 +78,32 @@ class MonitorClientList extends FlxGroup
 		visible = false;
 	}
 
+	public function getAreaBounds():TutorialGuideRect
+	{
+		return {x: areaX, y: areaY, w: contentW, h: areaH};
+	}
+
+	public function getRowBoundsForDataIndex(dataIndex:Int):Null<TutorialGuideRect>
+	{
+		for (row in rows)
+		{
+			if (!row.visible || row.dataIndex != dataIndex)
+				continue;
+			return {x: row.bg.x, y: row.bg.y, w: row.bg.width, h: row.bg.height};
+		}
+		return null;
+	}
+
+	public function findDataIndexForCitizen(citizen:Citizen):Int
+	{
+		for (i in 0...filtered.length)
+		{
+			if (filtered[i] == citizen)
+				return i;
+		}
+		return -1;
+	}
+
 	public function setBounds(x:Float, y:Float, w:Float, h:Float, rowH:Int, textSize:Int):Void
 	{
 		var dimChanged = Math.abs(areaW - w) > 0.5

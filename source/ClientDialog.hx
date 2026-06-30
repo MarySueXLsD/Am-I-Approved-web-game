@@ -12,9 +12,10 @@ import openfl.geom.Rectangle;
 class ClientDialog extends FlxGroup
 {
 	static inline var MAX_BUBBLES:Int = 6;
-	static inline var NUM_CHOICES:Int = 1;
-	static inline var CHAR_DELAY:Float = 0.045;
-	static inline var MSG_PAUSE:Float = 1.0;
+	static inline var NUM_CHOICES:Int = 2;
+	static inline var CONVERSATION_TEXT_SPEED:Float = 0.75;
+	static inline var CHAR_DELAY:Float = 0.045 / CONVERSATION_TEXT_SPEED;
+	static inline var MSG_PAUSE:Float = 1.0 / CONVERSATION_TEXT_SPEED;
 	static inline var DISMISS_TIME:Float = 3.0;
 	static inline var FADE_DURATION:Float = 0.3;
 	static inline var SLIDE_SPEED:Float = 8.0;
@@ -25,7 +26,7 @@ class ClientDialog extends FlxGroup
 	static inline var BUBBLE_MARGIN:Int = 4;
 	static inline var SLOT_GAP:Int = 3;
 	static inline var BORDER_W:Int = 2;
-	static inline var CONV_PAUSE_TIME:Float = 1.5;
+	static inline var CONV_PAUSE_TIME:Float = 1.5 / CONVERSATION_TEXT_SPEED;
 	static inline var CHOICE_PAD:Int = 3;
 	static inline var CHOICE_GAP:Int = 2;
 	static inline var DONE_LINGER:Float = 5.0;
@@ -47,6 +48,13 @@ class ClientDialog extends FlxGroup
 	static inline var STEP_CLIENT:Int = 1;
 	static inline var STEP_CHOICES:Int = 2;
 	static inline var STEP_PASSPORT:Int = 3;
+	static inline var STEP_PLAYER_PROMPT:Int = 4;
+	static inline var STEP_TUTORIAL_IDLE:Int = 5;
+	static inline var STEP_UNLOCK_SCAN_HINT:Int = 6;
+	static inline var STEP_END_VISIT:Int = 7;
+	static inline var STEP_TUTORIAL_CHOICES:Int = 8;
+	static inline var STEP_PREPARE_TUTORIAL_EXIT:Int = 9;
+	static inline var STEP_ID_HANDOFF:Int = 10;
 
 	var areaRight:Float;
 	var areaTop:Float;
@@ -96,6 +104,10 @@ class ClientDialog extends FlxGroup
 	var scanChoiceVisible:Bool = false;
 	var scanChoiceInScanMode:Bool = false;
 
+	var giveBackHintBg:FlxSprite;
+	var giveBackHintTxt:FlxText;
+	var giveBackHintVisible:Bool = false;
+
 	var playerBg:FlxSprite;
 	var playerTxt:FlxText;
 	var playerActive:Bool = false;
@@ -107,7 +119,7 @@ class ClientDialog extends FlxGroup
 
 	var convPhase:Int = CONV_NONE;
 	var convTimer:Float = 0;
-	var convSteps:Array<{type:Int, text:String}>;
+	var convSteps:Array<ClientConvStep>;
 	var convStepIdx:Int = 0;
 	var citizenName:String = "";
 	var scenario:Null<ClientScenario> = null;
@@ -124,10 +136,23 @@ class ClientDialog extends FlxGroup
 
 	public var consumedClick(default, null):Bool = false;
 	public var onPassportRequest:Void->Void;
+	public var onIdHandoffRequest:Void->Void;
 	public var onAutoDocumentsRequest:Void->Void;
 	public var onVisitComplete:Void->Void;
+	public var onPrepareTutorialExit:Void->Void;
 	public var onScanRequest:Void->Void;
 	public var onScanDismiss:Void->Void;
+	public var isScanHintAllowed:Null<Void->Bool> = null;
+	public var onUnlockScanHint:Void->Void;
+	public var onTutorialIdle:Void->Void;
+	public var onTutorialIntroSteps:Null<Void->Array<ClientConvStep>>;
+
+	var followUpNoChoices = false;
+	var tutorialChoiceLabel:Null<String> = null;
+	var tutorialChoiceLabels:Null<Array<String>> = null;
+	var tutorialAltSteps:Null<Array<ClientConvStep>> = null;
+	var tutorialIdle = false;
+	var scanHintForcedVisible = false;
 
 	public function new(areaRight:Float, areaTop:Float, areaBottom:Float, maxW:Int, clientSprite:FlxSprite, clientBaseY:Float)
 	{
@@ -183,7 +208,7 @@ class ClientDialog extends FlxGroup
 
 		choiceBg = [];
 		choiceTxt = [];
-		choiceAvail = [true];
+		choiceAvail = [true, false];
 
 		for (i in 0...NUM_CHOICES)
 		{
@@ -216,11 +241,45 @@ class ClientDialog extends FlxGroup
 		scanChoiceTxt.visible = false;
 		add(scanChoiceBg);
 		add(scanChoiceTxt);
+
+		giveBackHintBg = new FlxSprite();
+		giveBackHintBg.visible = false;
+		giveBackHintTxt = new FlxText(0, 0, 0, "Give back");
+		giveBackHintTxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 220, 150), "center");
+		giveBackHintTxt.visible = false;
+		add(giveBackHintBg);
+		add(giveBackHintTxt);
+	}
+
+	public function setGiveBackHintVisible(visible:Bool):Void
+	{
+		if (!visible)
+		{
+			if (!giveBackHintVisible)
+				return;
+			giveBackHintVisible = false;
+			giveBackHintBg.visible = false;
+			giveBackHintTxt.visible = false;
+			return;
+		}
+
+		giveBackHintVisible = true;
+		layoutGiveBackHint();
+	}
+
+	public function isPointInClientArea(mx:Float, my:Float):Bool
+	{
+		return isPointInClientWindow(mx, my);
 	}
 
 	public function setCitizenName(name:String):Void
 	{
 		citizenName = name;
+	}
+
+	public function getCitizenDisplayName():String
+	{
+		return citizenName;
 	}
 
 	public function setScenario(value:Null<ClientScenario>):Void
@@ -238,8 +297,29 @@ class ClientDialog extends FlxGroup
 			return;
 		}
 
+		if (scenario != null && scenario.isTutorial)
+		{
+			var steps = onTutorialIntroSteps != null
+				? onTutorialIntroSteps()
+				: ClientScenarios.chefTutorialIntroBaseSteps();
+			startScriptedConversation(steps);
+			return;
+		}
+
+		var openingSteps = scenario != null ? scenario.openingConvSteps() : null;
+		if (openingSteps != null)
+		{
+			startScriptedConversation(openingSteps);
+			return;
+		}
+
 		var msgs = scenario != null ? scenario.openingMessages() : ["Hello!", "How are you?", "Nice weather outside, huh?"];
 		startDialog(msgs);
+	}
+
+	public function markScenarioDocumentsDelivered():Void
+	{
+		documentsDelivered = true;
 	}
 
 	public function startThanksDialog():Void
@@ -256,10 +336,14 @@ class ClientDialog extends FlxGroup
 
 	public function shouldShowScanHint():Bool
 	{
+		if (isScanHintAllowed != null && !isScanHintAllowed())
+			return false;
 		if (!dialogueEngaged)
 			return false;
 		if (playerVisible || playerActive)
 			return false;
+		if (scanHintForcedVisible)
+			return true;
 		if (typingSlot != -1 || pauseActive)
 			return false;
 		if (convPhase == CONV_CLIENT_TALK)
@@ -298,6 +382,11 @@ class ClientDialog extends FlxGroup
 		return false;
 	}
 
+	public function suppressAutoDocumentDelivery():Void
+	{
+		documentsDelivered = true;
+	}
+
 	public function resetForNewDay():Void
 	{
 		for (i in 0...MAX_BUBBLES)
@@ -330,7 +419,55 @@ class ClientDialog extends FlxGroup
 		documentsDelivered = false;
 		closingDialog = false;
 		bookQuestionAskCounts = new Map();
+		followUpNoChoices = false;
+		tutorialChoiceLabel = null;
+		tutorialChoiceLabels = null;
+		tutorialAltSteps = null;
+		tutorialIdle = false;
+		scanHintForcedVisible = false;
 		clearConversationLog();
+	}
+
+	public function startScriptedConversation(steps:Array<ClientConvStep>, ?preserveLog:Bool = false):Void
+	{
+		for (i in 0...MAX_BUBBLES)
+		{
+			bgArr[i].visible = false;
+			txtArr[i].visible = false;
+			stArr[i] = ST_UNUSED;
+		}
+		order = [];
+		hideChoices();
+		hideScanChoice();
+		playerBg.visible = false;
+		playerTxt.visible = false;
+		playerVisible = false;
+		playerActive = false;
+		playerFadeTimer = -1;
+
+		messages = [];
+		nextMsgIdx = 0;
+		msgsDone = false;
+		pauseActive = false;
+		typingSlot = -1;
+		convSteps = steps;
+		convStepIdx = 0;
+		choiceAvail = [false, false];
+		passportPending = false;
+		passportDelivered = false;
+		dialogueEngaged = true;
+		dialogueChoiceMade = false;
+		documentsDelivered = false;
+		followUpNoChoices = false;
+		tutorialChoiceLabel = null;
+		tutorialChoiceLabels = null;
+		tutorialAltSteps = null;
+		tutorialIdle = false;
+		scanHintForcedVisible = false;
+		if (!preserveLog)
+			clearConversationLog();
+
+		executeNextStep();
 	}
 
 	public function startDialog(msgs:Array<String>):Void
@@ -358,13 +495,70 @@ class ClientDialog extends FlxGroup
 		convPhase = CONV_CLIENT_TALK;
 		convSteps = [];
 		convStepIdx = 0;
-		choiceAvail = [hasSmallTalkChoiceAvailable()];
+		choiceAvail = [hasSmallTalkChoiceAvailable(), false];
 		passportPending = false;
 		passportDelivered = false;
 		dialogueEngaged = true;
 		dialogueChoiceMade = false;
 		documentsDelivered = false;
+		followUpNoChoices = false;
+		tutorialChoiceLabel = null;
+		tutorialChoiceLabels = null;
+		tutorialAltSteps = null;
+		tutorialIdle = false;
+		scanHintForcedVisible = false;
 		clearConversationLog();
+
+		beginNextMessage();
+	}
+
+	public function canAcceptFollowUp():Bool
+	{
+		if (closingDialog)
+			return false;
+		if (tutorialIdle)
+			return true;
+		return convPhase == CONV_NONE || convPhase == CONV_CHOICES;
+	}
+
+	public function isDialogueEngaged():Bool
+	{
+		if (tutorialIdle)
+			return false;
+		return convPhase != CONV_NONE && convPhase != CONV_DONE;
+	}
+
+	public function startFollowUpDialog(msgs:Array<String>):Void
+	{
+		for (i in 0...MAX_BUBBLES)
+		{
+			bgArr[i].visible = false;
+			txtArr[i].visible = false;
+			stArr[i] = ST_UNUSED;
+		}
+		order = [];
+		hideChoices();
+		hideScanChoice();
+		playerBg.visible = false;
+		playerTxt.visible = false;
+		playerVisible = false;
+		playerActive = false;
+		playerFadeTimer = -1;
+
+		messages = msgs;
+		nextMsgIdx = 0;
+		msgsDone = false;
+		pauseActive = false;
+		typingSlot = -1;
+		convPhase = CONV_CLIENT_TALK;
+		convSteps = [];
+		convStepIdx = 0;
+		choiceAvail = [false, false];
+		passportPending = false;
+		passportDelivered = false;
+		dialogueEngaged = true;
+		dialogueChoiceMade = false;
+		followUpNoChoices = true;
 
 		beginNextMessage();
 	}
@@ -393,6 +587,7 @@ class ClientDialog extends FlxGroup
 
 	function typeMessage(text:String, withPing:Bool):Void
 	{
+		OfficeAmbientAudio.playRandomBlahBlah();
 		hidePlayerBubble();
 
 		for (idx in order)
@@ -435,6 +630,7 @@ class ClientDialog extends FlxGroup
 
 	function typePlayerMessage(text:String):Void
 	{
+		OfficeAmbientAudio.playRandomBlahBlah();
 		for (idx in order)
 		{
 			if (stArr[idx] == ST_LAST)
@@ -480,6 +676,30 @@ class ClientDialog extends FlxGroup
 		return y;
 	}
 
+	function bubbleLineCount(slot:Int, chars:Int):Int
+	{
+		if (chars <= 0)
+			return 1;
+
+		var tf = txtArr[slot].textField;
+		if (tf != null && tf.numLines > 0)
+			return tf.numLines;
+
+		var text = msgArr[slot].substr(0, chars);
+		var lines = 0;
+		for (paragraph in text.split("\n"))
+		{
+			if (paragraph.length == 0)
+			{
+				lines += 1;
+				continue;
+			}
+			var estW = paragraph.length * avgCharW;
+			lines += Std.int(Math.max(1, Math.ceil(estW / maxTextW)));
+		}
+		return Std.int(Math.max(1, lines));
+	}
+
 	function sizeBubble(slot:Int, chars:Int):Void
 	{
 		var estW = chars * avgCharW;
@@ -490,8 +710,7 @@ class ClientDialog extends FlxGroup
 		if (bw < minBubbleW)
 			bw = minBubbleW;
 
-		var wrapW = maxTextW * 0.78;
-		var numLines = Std.int(Math.max(1, Math.ceil(estW / wrapW)));
+		var numLines = bubbleLineCount(slot, chars);
 		var bh = numLines * lineH + BUBBLE_PAD * 2;
 
 		bwArr[slot] = bw;
@@ -555,6 +774,7 @@ class ClientDialog extends FlxGroup
 		if (MonitorOverlay.pausesDialogue() || ShiftPauseOverlay.pausesDialogue())
 			return;
 
+		checkDialogueSkipClick();
 		updatePing(elapsed);
 		updateTyping(elapsed);
 		updatePlayerTyping(elapsed);
@@ -567,6 +787,8 @@ class ClientDialog extends FlxGroup
 		checkScanChoiceClick();
 		updateChoiceHover();
 		updateScanChoiceHover();
+		if (giveBackHintVisible)
+			layoutGiveBackHint();
 	}
 
 	function updatePing(elapsed:Float):Void
@@ -606,27 +828,7 @@ class ClientDialog extends FlxGroup
 		}
 
 		if (chArr[typingSlot] >= msg.length)
-		{
-			recordClientLine(msg);
-			if (convPhase == CONV_CLIENT_TALK)
-			{
-				if (nextMsgIdx >= messages.length)
-					stArr[typingSlot] = ST_LAST;
-				else
-				{
-					stArr[typingSlot] = ST_DISMISS;
-					tmArr[typingSlot] = 0;
-				}
-				typingSlot = -1;
-				pauseActive = true;
-				pauseTimer = 0;
-			}
-			else
-			{
-				stArr[typingSlot] = ST_LAST;
-				typingSlot = -1;
-			}
-		}
+			completeClientTyping();
 	}
 
 	function updatePlayerTyping(elapsed:Float):Void
@@ -648,10 +850,146 @@ class ClientDialog extends FlxGroup
 		}
 
 		if (playerChars >= playerMsg.length)
+			completePlayerTyping();
+	}
+
+	function completeClientTyping():Void
+	{
+		if (typingSlot == -1)
+			return;
+
+		var slot = typingSlot;
+		var msg = msgArr[slot];
+		chArr[slot] = msg.length;
+		txtArr[slot].text = msg;
+		sizeBubble(slot, msg.length);
+		placeBubble(slot);
+
+		recordClientLine(msg);
+		if (convPhase == CONV_CLIENT_TALK)
 		{
-			recordPlayerLine(playerMsg);
-			playerActive = false;
+			if (nextMsgIdx >= messages.length)
+				stArr[slot] = ST_LAST;
+			else
+			{
+				stArr[slot] = ST_DISMISS;
+				tmArr[slot] = 0;
+			}
+			typingSlot = -1;
+			pauseActive = true;
+			pauseTimer = 0;
 		}
+		else
+		{
+			stArr[slot] = ST_LAST;
+			typingSlot = -1;
+		}
+	}
+
+	function completePlayerTyping():Void
+	{
+		if (!playerActive)
+			return;
+
+		playerChars = playerMsg.length;
+		playerTxt.text = playerMsg;
+		sizePlayerBubble(playerChars);
+		placePlayerBubble();
+		recordPlayerLine(playerMsg);
+		playerActive = false;
+	}
+
+	function isPointInClientWindow(mx:Float, my:Float):Bool
+	{
+		return mx >= 0 && mx < areaRight && my >= areaTop && my < areaBottom;
+	}
+
+	function layoutGiveBackHint():Void
+	{
+		var label = "Give back";
+		giveBackHintTxt.text = label;
+		var txtW = Std.int(Math.max(minBubbleW, label.length * avgCharW + BUBBLE_PAD * 2));
+		var txtH = lineH + BUBBLE_PAD;
+		var choiceW = txtW + CHOICE_PAD * 2;
+		var choiceH = txtH + CHOICE_PAD * 2;
+		var cx = clientRef.x + (clientRef.width - choiceW) * 0.5;
+		var cy = clientRef.y - choiceH - 6;
+		if (cy < areaTop + BUBBLE_MARGIN)
+			cy = areaTop + BUBBLE_MARGIN;
+
+		giveBackHintBg.makeGraphic(choiceW, choiceH, FlxColor.fromRGB(28, 42, 34), true);
+		drawBorder(giveBackHintBg, choiceW, choiceH, FlxColor.fromRGB(90, 150, 100));
+		giveBackHintBg.setPosition(cx, cy);
+		giveBackHintBg.visible = true;
+
+		giveBackHintTxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 220, 150), "center");
+		giveBackHintTxt.setSize(txtW, txtH);
+		giveBackHintTxt.setPosition(cx + CHOICE_PAD, cy + CHOICE_PAD);
+		giveBackHintTxt.visible = true;
+	}
+
+	function isPointOnDialogueControl(mx:Float, my:Float):Bool
+	{
+		if (choicesVisible)
+		{
+			for (i in 0...NUM_CHOICES)
+			{
+				if (!choiceAvail[i] || !choiceBg[i].visible)
+					continue;
+
+				var bg = choiceBg[i];
+				if (mx >= bg.x && mx < bg.x + bg.width && my >= bg.y && my < bg.y + bg.height)
+					return true;
+			}
+		}
+
+		if (scanChoiceVisible && scanChoiceBg.visible)
+		{
+			var bg = scanChoiceBg;
+			if (mx >= bg.x && mx < bg.x + bg.width && my >= bg.y && my < bg.y + bg.height)
+				return true;
+		}
+
+		return false;
+	}
+
+	function checkDialogueSkipClick():Void
+	{
+		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
+			|| ShiftPauseOverlay.blocksWorldInput() || EndOfDemoPopup.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+			return;
+
+		if (!FlxG.mouse.justPressed)
+			return;
+
+		if (DeskDocument.currentDrag != null)
+			return;
+
+		if (tutorialIdle || convPhase == CONV_NONE || convPhase == CONV_DONE)
+			return;
+
+		if (typingSlot == -1 && !playerActive)
+			return;
+
+		var mx = FlxG.mouse.x;
+		var my = FlxG.mouse.y;
+		if (!isPointInClientWindow(mx, my) || isPointOnDialogueControl(mx, my))
+			return;
+
+		var skipped = false;
+		if (typingSlot != -1)
+		{
+			completeClientTyping();
+			skipped = true;
+		}
+		if (playerActive)
+		{
+			completePlayerTyping();
+			skipped = true;
+		}
+
+		if (skipped)
+			consumedClick = true;
 	}
 
 	function updatePause(elapsed:Float):Void
@@ -760,6 +1098,11 @@ class ClientDialog extends FlxGroup
 						closingDialog = false;
 						enterDone();
 					}
+					else if (followUpNoChoices)
+					{
+						followUpNoChoices = false;
+						enterDone();
+					}
 					else
 					{
 						tryDeliverScenarioDocuments();
@@ -777,7 +1120,10 @@ class ClientDialog extends FlxGroup
 				}
 			case CONV_STEP_PAUSE:
 				convTimer += elapsed;
-				if (convTimer >= CONV_PAUSE_TIME)
+				var pauseTime = CONV_PAUSE_TIME;
+				if (convStepIdx < convSteps.length && convSteps[convStepIdx].type == STEP_END_VISIT)
+					pauseTime = 0;
+				if (convTimer >= pauseTime)
 					executeNextStep();
 			case CONV_DONE:
 				tryDeliverPassport();
@@ -808,6 +1154,28 @@ class ClientDialog extends FlxGroup
 		hidePlayerBubble();
 	}
 
+	function completeVisitNow():Void
+	{
+		hideChoices();
+		hideScanChoice();
+		hidePlayerBubble();
+		scanHintForcedVisible = false;
+		dialogueEngaged = false;
+
+		for (idx in order)
+		{
+			if (stArr[idx] == ST_LAST)
+			{
+				stArr[idx] = ST_DISMISS;
+				tmArr[idx] = 0;
+			}
+		}
+
+		convPhase = CONV_NONE;
+		if (onVisitComplete != null)
+			onVisitComplete();
+	}
+
 	function tryDeliverScenarioDocuments():Void
 	{
 		if (documentsDelivered || scenario == null || !scenario.autoDeliverDocuments)
@@ -821,11 +1189,15 @@ class ClientDialog extends FlxGroup
 	{
 		hideChoices();
 		hideScanChoice();
+		choiceAvail = [false, false];
+		tutorialChoiceLabel = null;
+		tutorialChoiceLabels = null;
+		tutorialAltSteps = null;
 
 		var timesAsked = bookQuestionAskCounts.exists(actionId) ? bookQuestionAskCounts.get(actionId) : 0;
 		var steps = scenario != null ? scenario.bookScanSteps(actionId, timesAsked) : null;
 		if (steps == null)
-			steps = ClientScenarios.bookScanStepsFor(null, actionId, timesAsked);
+			steps = ClientScenarios.bookScanStepsFor(scenario, actionId, timesAsked);
 
 		if (steps == null)
 			return;
@@ -847,13 +1219,13 @@ class ClientDialog extends FlxGroup
 		convSteps = [];
 		if (clientMessages.length == 0)
 		{
-			convSteps.push({type: STEP_CLIENT, text: "Yeah, that all looks right to me!"});
+			convSteps.push({type: STEP_CLIENT, text: "Looks good to me!"});
 		}
 		else
 		{
 			for (msg in clientMessages)
 				convSteps.push({type: STEP_CLIENT, text: msg});
-			convSteps.push({type: STEP_PLAYER, text: "Alright, let me check it again."});
+			convSteps.push({type: STEP_PLAYER, text: "Let me check again."});
 		}
 		convSteps.push({type: STEP_CHOICES, text: ""});
 
@@ -866,6 +1238,31 @@ class ClientDialog extends FlxGroup
 		dialogueChoiceMade = true;
 		choiceAvail[idx] = false;
 		hideChoices();
+
+		if (tutorialChoiceLabels != null)
+		{
+			var label = idx < tutorialChoiceLabels.length ? tutorialChoiceLabels[idx] : "";
+			var alt = tutorialAltSteps;
+			tutorialChoiceLabels = null;
+			tutorialAltSteps = null;
+			if (idx > 0 && alt != null)
+			{
+				convSteps = alt;
+				convStepIdx = 0;
+			}
+			typePlayerMessage(label);
+			convPhase = CONV_STEP_TYPE;
+			return;
+		}
+
+		if (tutorialChoiceLabel != null)
+		{
+			var label = tutorialChoiceLabel;
+			tutorialChoiceLabel = null;
+			typePlayerMessage(label);
+			convPhase = CONV_STEP_TYPE;
+			return;
+		}
 
 		switch (idx)
 		{
@@ -886,14 +1283,21 @@ class ClientDialog extends FlxGroup
 		return true;
 	}
 
-	function getSmallTalkChoiceLabel():String
+	function getChoiceLabel(idx:Int):String
 	{
+		if (tutorialChoiceLabels != null && idx < tutorialChoiceLabels.length)
+			return tutorialChoiceLabels[idx];
+
+		if (tutorialChoiceLabel != null)
+			return tutorialChoiceLabel;
+
 		if (scenario != null)
 		{
 			var label = scenario.smallTalkChoiceLabel();
 			if (label != null)
 				return label;
 		}
+
 		return "Nice weather today, huh?";
 	}
 
@@ -933,9 +1337,48 @@ class ClientDialog extends FlxGroup
 				}
 				else
 					enterDone();
+			case STEP_PLAYER_PROMPT:
+				tutorialChoiceLabel = step.text;
+				choiceAvail = [true, false];
+				showChoices();
+				convPhase = CONV_CHOICES;
+			case STEP_TUTORIAL_CHOICES:
+				tutorialChoiceLabels = step.choices;
+				tutorialAltSteps = step.altSteps;
+				choiceAvail = [true, true];
+				showChoices();
+				convPhase = CONV_CHOICES;
+			case STEP_UNLOCK_SCAN_HINT:
+				scanHintForcedVisible = true;
+				if (onUnlockScanHint != null)
+					onUnlockScanHint();
+				syncScanChoice();
+				executeNextStep();
+			case STEP_PREPARE_TUTORIAL_EXIT:
+				if (onPrepareTutorialExit != null)
+					onPrepareTutorialExit();
+				executeNextStep();
+			case STEP_TUTORIAL_IDLE:
+				tutorialIdle = true;
+				tutorialChoiceLabel = null;
+				tutorialChoiceLabels = null;
+				tutorialAltSteps = null;
+				hideChoices();
+				convPhase = CONV_CHOICES;
+				syncScanChoice();
+				if (onTutorialIdle != null)
+					onTutorialIdle();
+			case STEP_END_VISIT:
+				scanHintForcedVisible = false;
+				completeVisitNow();
 			case STEP_PASSPORT:
+				passportPending = true;
 				tryDeliverPassport();
-				enterDone();
+				executeNextStep();
+			case STEP_ID_HANDOFF:
+				if (onIdHandoffRequest != null)
+					onIdHandoffRequest();
+				executeNextStep();
 			default:
 				enterDone();
 		}
@@ -943,9 +1386,10 @@ class ClientDialog extends FlxGroup
 
 	function tryDeliverPassport():Void
 	{
-		if (!passportPending || passportDelivered || onPassportRequest == null)
+		if (passportDelivered || onPassportRequest == null)
 			return;
 		passportDelivered = true;
+		passportPending = false;
 		onPassportRequest();
 	}
 
@@ -1079,7 +1523,7 @@ class ClientDialog extends FlxGroup
 	function checkScanChoiceClick():Void
 	{
 		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
-			|| ShiftPauseOverlay.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+			|| ShiftPauseOverlay.blocksWorldInput() || EndOfDemoPopup.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
 			return;
 
 		if (!scanChoiceVisible || !FlxG.mouse.justPressed)
@@ -1118,7 +1562,6 @@ class ClientDialog extends FlxGroup
 
 	function layoutChoices():Void
 	{
-		var label = getSmallTalkChoiceLabel();
 		var numVisible = 0;
 		for (i in 0...NUM_CHOICES)
 			if (choiceAvail[i])
@@ -1171,7 +1614,7 @@ class ClientDialog extends FlxGroup
 			choiceBg[i].alpha = 1.0;
 
 			choiceTxt[i].fieldWidth = txtW;
-			choiceTxt[i].text = toTwoLineChoice(label, txtW, cAvgW);
+			choiceTxt[i].text = toTwoLineChoice(getChoiceLabel(i), txtW, cAvgW);
 			choiceTxt[i].setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 195, 140), "center");
 			choiceTxt[i].x = cx + CHOICE_PAD;
 			choiceTxt[i].y = baseY + CHOICE_PAD;
@@ -1231,7 +1674,7 @@ class ClientDialog extends FlxGroup
 	function checkChoiceClicks():Void
 	{
 		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
-			|| ShiftPauseOverlay.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+			|| ShiftPauseOverlay.blocksWorldInput() || EndOfDemoPopup.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
 			return;
 
 		if (ScanModeOverlay.isScanModeActive())
@@ -1292,5 +1735,7 @@ class ClientDialog extends FlxGroup
 		playerTxt.cameras = cams;
 		scanChoiceBg.cameras = cams;
 		scanChoiceTxt.cameras = cams;
+		giveBackHintBg.cameras = cams;
+		giveBackHintTxt.cameras = cams;
 	}
 }

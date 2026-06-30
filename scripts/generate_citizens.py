@@ -1,10 +1,19 @@
 import hashlib
 import json
 import random
+import sys
 import unicodedata
 from copy import deepcopy
 from datetime import date, timedelta
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loan_scenario_calc import (  # noqa: E402
+    build_loan_package,
+    chef_tutorial_loan,
+    first_client_wedding_loan,
+    format_lor,
+)
 
 random.seed(42)
 
@@ -13,9 +22,15 @@ NAMES_PATH = ROOT / "static" / "client_names.json"
 OUT_PATH = ROOT / "static" / "citizens.json"
 
 PER_COUNTRY = 20
+GAME_YEAR = 1986
+GAME_DATE = date(GAME_YEAR, 6, 7)
+MIN_AGE = 20
+MAX_AGE = 40
 OST_TO_LOR_RATE = 157.83
+SALARY_CURRENCY = "LOR"
 VADZIM_CONTRACT_OST = 13_453_560
 VADZIM_SALARY_LOR = 85240.82
+CHEF_NATIONAL_ID = "AAA3493A"
 
 
 def load_names():
@@ -134,8 +149,10 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
     lo, hi = country["salaryRange"]
     salary = int(random.randint(lo, hi) * mult)
 
-    dob = date(1955, 1, 1) + timedelta(days=random.randint(0, 22000))
-    age = (date(2026, 6, 6) - dob).days // 365
+    dob_start = GAME_DATE.replace(year=GAME_YEAR - MAX_AGE)
+    dob_end = GAME_DATE.replace(year=GAME_YEAR - MIN_AGE)
+    dob = dob_start + timedelta(days=random.randint(0, (dob_end - dob_start).days))
+    age = (GAME_DATE - dob).days // 365
     city = random.choice(country["cities"])
     region = shorten_region(random.choice(country["regions"]))
     street_num = random.randint(100, 9899)
@@ -149,7 +166,10 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
     national_id = make_national_id(digest)
     tax_id = f"{country['taxPrefix']}-{digest}"
 
-    issue = date(2020, 1, 1) + timedelta(days=random.randint(0, 1800))
+    adult_on = date(dob.year + 18, dob.month, min(dob.day, 28))
+    issue_earliest = max(adult_on, date(GAME_YEAR - 10, 1, 1))
+    issue_span = max(0, (GAME_DATE - issue_earliest).days)
+    issue = issue_earliest + timedelta(days=random.randint(0, issue_span))
     try:
         expiry = issue.replace(year=issue.year + 10)
     except ValueError:
@@ -174,7 +194,7 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
         "maritalStatus": random.choice(marital),
         "occupation": occ,
         "averageAnnualSalary": salary,
-        "salaryCurrency": country["currency"],
+        "salaryCurrency": SALARY_CURRENCY,
         "address": {
             "street": street,
             "city": city,
@@ -198,7 +218,7 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
         },
         "bankRiskFlags": [],
         "criminalRecord": "none",
-        "yearsAtAddress": random.randint(1, 25),
+        "yearsAtAddress": random.randint(1, max(1, min(age - 5, 18))),
         "dependents": random.randint(0, 3) if age > 22 else 0,
         "passportDoc": {
             "passportId": passport_id,
@@ -231,7 +251,7 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
             "lastName": ln,
             "occupation": occ,
             "annualSalary": salary,
-            "salaryCurrency": country["currency"],
+            "salaryCurrency": SALARY_CURRENCY,
         },
     }
 
@@ -246,6 +266,20 @@ def build_citizen(country, fn, ln, passport_num, names_db, scenario=None, overri
                 citizen[key] = value
 
     return citizen
+
+
+def apply_identity(citizen, first_name, last_name, sex):
+    citizen["firstName"] = first_name
+    citizen["lastName"] = last_name
+    citizen["sex"] = sex
+    citizen["passportDoc"]["firstName"] = first_name
+    citizen["passportDoc"]["lastName"] = last_name
+    citizen["passportDoc"]["sex"] = sex
+    citizen["idCardDoc"]["firstName"] = first_name
+    citizen["idCardDoc"]["lastName"] = last_name
+    citizen["idCardDoc"]["sex"] = sex
+    citizen["employmentContractDoc"]["firstName"] = first_name
+    citizen["employmentContractDoc"]["lastName"] = last_name
 
 
 def apply_scenario_mismatch(citizen, mismatch_type):
@@ -304,13 +338,44 @@ def scenario_input_change(field, value, reason):
     }
 
 
-def scenario_transfer(amount, recipient_hint):
-    return {
-        "purpose": "transfer",
-        "target": f"Transfer {amount} LOR to {recipient_hint} approved because all data is correct",
-        "transferAmountLOR": amount,
-        "outcome": "approve",
-    }
+def attach_loan_details(visit, citizen, rng, *, amount=None, product=None, security=None, theme=None):
+    loan = build_loan_package(
+        citizen,
+        amount=amount,
+        product=product,
+        security=security,
+        theme=theme,
+        rng=rng,
+    )
+    visit.update(loan)
+    return visit
+
+
+def db_change_opening_dialogue(loan_amount_text, reason):
+    return [
+        "Hi — I'm here about a loan and a database fix.",
+        f"I need about {loan_amount_text} LOR.",
+        reason,
+        "Here's my ID and contract.",
+    ]
+
+
+def input_change_opening_dialogue(loan_amount_text):
+    return [
+        "Hello.",
+        f"I'd like to borrow around {loan_amount_text} LOR.",
+        "Everything should be on file already.",
+        "Here's my ID.",
+    ]
+
+
+def decline_opening_dialogue(loan_amount_text):
+    return [
+        "Hi.",
+        f"I need a loan — about {loan_amount_text} LOR.",
+        "I'm in a bit of a hurry.",
+        "Here's my ID.",
+    ]
 
 
 def main():
@@ -432,12 +497,11 @@ def main():
     ]
 
     scenario_plan = [
-        ("loan_approve", 35),
+        ("loan_approve", 40),
         ("loan_decline", 18),
         ("db_change", 14),
         ("input_change", 12),
-        ("transfer", 11),
-        ("correct_values", 10),
+        ("correct_values", 16),
     ]
     scenario_queue = []
     for kind, count in scenario_plan:
@@ -463,7 +527,6 @@ def main():
     }
 
     loan_amounts = [15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000, 55000, 60000]
-    transfer_amounts = [500, 1200, 2500, 5000, 7500, 10000, 15000]
 
     used_pairs = set()
     citizens = []
@@ -471,15 +534,19 @@ def main():
     special_by_country = {
         "kethran": ("Yerasyl", "Serik-AF"),
         "ostmark": ("Vadzim", "Trayeuski"),
-        "lorian": ("Denis", "Grusetchii"),
+        "lorian": ("Henri", "Moreau"),
     }
     extra_special_names = [
-        ("Jean-Pierre", "O'Brien"),
-        ("Marie-Claire", "DuPont"),
         ("Aoife", "Murphy-Smith"),
         ("Soren", "Berg-Hansen"),
         ("Lucia", "DiMarco"),
     ]
+    story_identity_by_slot = {
+        ("lorian", 1): ("Denis", "Grusetchii", "M"),
+        ("lorian", 2): ("Garrett", "Sloan", "M"),
+        ("valdorian", 1): ("Marcus", "Whitford", "M"),
+        ("valdorian", 2): ("Rachel", "Ashton", "F"),
+    }
     extra_special_idx = 0
     scenario_idx = 0
 
@@ -496,7 +563,10 @@ def main():
             scenario_idx += 1
 
             fn = ln = None
-            if slot == 0 and country["code"] in special_by_country:
+            story_identity = story_identity_by_slot.get((country["code"], slot))
+            if story_identity is not None:
+                fn, ln, _story_sex = story_identity
+            elif slot == 0 and country["code"] in special_by_country:
                 fn, ln = special_by_country[country["code"]]
             elif slot == 1 and extra_special_idx < len(extra_special_names):
                 fn, ln = extra_special_names[extra_special_idx]
@@ -517,15 +587,24 @@ def main():
             overrides = None
 
             if fn == "Yerasyl" and ln == "Serik-AF":
-                visit = scenario_loan_approve(30000)
+                visit = scenario_db_change(
+                    "averageAnnualSalary",
+                    32446,
+                    "convert monthly 185000 KTH from kethran_job_contract_with_name_1.png at 68.42 KTH/LOR",
+                    tolerance=100.0,
+                )
+                visit["contractSalaryKTH"] = 185000
+                visit["expectedSalaryLOR"] = 32446
+                visit["salaryToleranceLOR"] = 100.0
                 overrides = {
-                    "salaryCurrency": "KTH",
-                    "averageAnnualSalary": 72538,
+                    "sex": "M",
+                    "salaryCurrency": SALARY_CURRENCY,
+                    "averageAnnualSalary": 0,
                     "occupation": "Teacher",
                     "passportName": "Yerasyl S. Serik-AF",
                     "employmentContractDoc": {
                         "occupation": "Teacher",
-                        "annualSalary": 72538,
+                        "annualSalary": 185000,
                         "salaryCurrency": "KTH",
                     },
                 }
@@ -541,7 +620,8 @@ def main():
                 visit["salaryToleranceLOR"] = 2.0
                 visit["loanAmountLOR"] = 40000
                 overrides = {
-                    "salaryCurrency": "LOR",
+                    "sex": "M",
+                    "salaryCurrency": SALARY_CURRENCY,
                     "averageAnnualSalary": 0,
                     "occupation": "Accountant",
                     "employmentContractDoc": {
@@ -552,13 +632,48 @@ def main():
                         "salaryCurrency": "OST",
                     },
                 }
+            elif fn == "Marcus" and ln == "Whitford":
+                amount = 35000
+                visit = scenario_loan_approve(amount)
+                overrides = {
+                    "sex": "M",
+                    "maritalStatus": "married",
+                    "averageAnnualSalary": 54664,
+                    "salaryCurrency": SALARY_CURRENCY,
+                    "employmentContractDoc": {
+                        "annualSalary": 54664,
+                        "salaryCurrency": SALARY_CURRENCY,
+                    },
+                }
             elif fn == "Denis" and ln == "Grusetchii":
+                amount = 30000
+                visit = scenario_loan_approve(amount)
+                overrides = {"sex": "M"}
+            elif fn == "Henri" and ln == "Moreau":
                 visit = scenario_loan_decline("applicant has no salary on file")
                 overrides = {
+                    "firstName": "Henri",
+                    "lastName": "Moreau",
+                    "sex": "M",
+                    "nationalId": CHEF_NATIONAL_ID,
+                    "taxId": f"LTX-{CHEF_NATIONAL_ID}4",
+                    "passportName": "MOREAU, Henri",
+                    "occupation": "Branch Manager",
                     "averageAnnualSalary": 0,
+                    "email": "h.moreau@lor.m",
+                    "passportDoc": {"nationalId": CHEF_NATIONAL_ID},
+                    "idCardDoc": {"nationalId": CHEF_NATIONAL_ID},
                     "employmentContractDoc": {
+                        "firstName": "Henri",
+                        "lastName": "Moreau",
+                        "occupation": "Branch Manager",
                         "annualSalary": 0,
                         "salaryCurrency": "LOR",
+                    },
+                    "emergencyContact": {
+                        "name": "Claire Moreau",
+                        "relationship": "spouse",
+                        "phone": "+18-721-9085",
                     },
                 }
             else:
@@ -588,9 +703,6 @@ def main():
                         salary,
                         "loan form salary must match verified annual income",
                     )
-                elif scenario_kind == "transfer":
-                    amount = random.choice(transfer_amounts)
-                    visit = scenario_transfer(amount, "savings account on file")
                 elif scenario_kind == "correct_values":
                     amount = random.choice(loan_amounts)
                     visit = {
@@ -610,6 +722,79 @@ def main():
                 overrides=overrides,
             )
 
+            if story_identity is not None:
+                apply_identity(citizen, story_identity[0], story_identity[1], story_identity[2])
+            elif fn == "Henri" and ln == "Moreau":
+                apply_identity(citizen, "Henri", "Moreau", "M")
+            elif fn == "Yerasyl" and ln == "Serik-AF":
+                apply_identity(citizen, "Yerasyl", "Serik-AF", "M")
+            elif fn == "Vadzim" and ln == "Trayeuski":
+                apply_identity(citizen, "Vadzim", "Trayeuski", "M")
+            elif fn == "Lucia" and ln == "DiMarco":
+                apply_identity(citizen, "Lucia", "DiMarco", "F")
+
+            if citizen.get("visit") is not None and citizen["visit"].get("purpose") == "loan":
+                visit = citizen["visit"]
+                if fn == "Henri" and ln == "Moreau":
+                    visit.update(chef_tutorial_loan())
+                    visit["dialogue"]["opening"] = []
+                elif fn == "Marcus" and ln == "Whitford":
+                    visit.update(first_client_wedding_loan())
+                elif fn == "Yerasyl" and ln == "Serik-AF":
+                    loan = build_loan_package(citizen, amount=25000, product="personal", security="unsecured", rng=random)
+                    visit.update(loan)
+                    visit["dialogue"]["opening"] = [
+                        "Hi — I need my salary corrected in your database.",
+                        "Here's my Kethran ID and job contract.",
+                        "The contract lists one hundred eighty-five thousand KTH.",
+                        "That's my monthly salary — not annual.",
+                        "Please fix my annual salary to match.",
+                    ]
+                    visit["dialogue"]["borrow_amount"] = "I'm not here for a loan — just the salary update."
+                    visit["dialogue"]["quickAnswers"]["borrow_amount"] = "No loan — salary update only."
+                elif fn == "Vadzim" and ln == "Trayeuski":
+                    loan = build_loan_package(
+                        citizen,
+                        amount=visit.get("loanAmountLOR", 40000),
+                        product="personal",
+                        security="unsecured",
+                        rng=random,
+                    )
+                    visit.update(loan)
+                    visit["dialogue"]["opening"] = [
+                        "Hey. I need a loan. Today.",
+                        "Forty thousand LOR — personal, unsecured.",
+                        "Can we hurry? I'm late.",
+                        "Here's my ID.",
+                    ]
+                    visit["dialogue"]["borrow_amount"] = "Forty thousand LOR. Personal."
+                    visit["dialogue"]["loan_purpose"] = "Personal expenses. Look, just process it."
+                    visit["dialogue"]["loan_security"] = "unsecured"
+                    visit["dialogue"]["quickAnswers"]["borrow_amount"] = "40,000 LOR — hurry up."
+                    visit["dialogue"]["quickAnswers"]["loan_purpose"] = "Personal."
+                    visit["dialogue"]["quickAnswers"]["loan_security"] = "Unsecured."
+                else:
+                    preset_amount = visit.get("loanAmountLOR")
+                    attach_loan_details(visit, citizen, random, amount=preset_amount)
+                    amount_text = format_lor(visit["loanAmountLOR"])
+                    outcome = visit.get("outcome", "approve")
+                    if outcome == "approve_after_db_change":
+                        reason = visit["target"].split(" — ", 1)[-1]
+                        visit["dialogue"]["opening"] = db_change_opening_dialogue(amount_text, reason)
+                        visit["dialogue"]["borrow_amount"] = (
+                            "I'm not here for a loan today — please fix my annual salary in the database."
+                        )
+                        visit["dialogue"]["quickAnswers"]["borrow_amount"] = "No loan — salary update only."
+                    elif outcome == "approve_after_input_change":
+                        visit["dialogue"]["opening"] = input_change_opening_dialogue(amount_text)
+                    elif outcome == "decline":
+                        visit["dialogue"]["opening"] = decline_opening_dialogue(amount_text)
+                        visit["dialogue"]["borrow_amount"] = f"{amount_text} LOR. Can we move faster?"
+                        visit["dialogue"]["loan_purpose"] = "Personal. Just process it."
+                        visit["dialogue"]["loan_security"] = visit.get("loanSecurity", "unsecured")
+                        visit["dialogue"]["quickAnswers"]["borrow_amount"] = f"{amount_text} LOR — hurry up."
+                        visit["dialogue"]["quickAnswers"]["loan_purpose"] = "Personal."
+
             if (
                 visit
                 and visit.get("outcome") == "decline"
@@ -626,14 +811,14 @@ def main():
         "meta": {
             "count": len(citizens),
             "countries": [c["code"] for c in countries],
-            "generated": "2026-06-06",
+            "generated": GAME_DATE.isoformat(),
+            "gameYear": GAME_YEAR,
             "nameSource": "static/client_names.json",
             "scenarioTypes": [
                 "loan_approve",
                 "loan_decline",
                 "db_change",
                 "input_change",
-                "transfer",
                 "correct_values",
             ],
             "exchangeRates": {"OST_per_LOR": OST_TO_LOR_RATE},
@@ -645,7 +830,7 @@ def main():
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
     print(f"Wrote {len(citizens)} citizens to {OUT_PATH}")
-    featured = [c for c in citizens if c["lastName"] in ("Serik-AF", "Trayeuski", "Grusetchii")]
+    featured = [c for c in citizens if c["lastName"] in ("Serik-AF", "Trayeuski", "Moreau")]
     for c in featured:
         print(f"  {c['firstName']} {c['lastName']} ({c['country']}): {c['visit']['target']}")
 

@@ -1,5 +1,6 @@
 package;
 
+import flixel.FlxCamera;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.FlxState;
@@ -50,6 +51,10 @@ class PlayState extends FlxState
 	var calculatorDisplayTimer = 0.0;
 	var calculatorDisplayLastW = -1;
 	var calculatorDisplayLastH = -1;
+	var calculatorDisplayLastFontSize = -1;
+	var calculatorDisplayLastValue = "";
+	var documentLayersNeedSync = true;
+	var bankTextOverlaysNeedSync = true;
 	var calculatorDisplayValue = "0";
 	var calculatorAccumulator:Null<Float> = null;
 	var calculatorPendingOp:String = "";
@@ -68,7 +73,13 @@ class PlayState extends FlxState
 	var pendingAutoPrintLoanForm = false;
 	var currentClientIndex = 0;
 	var currentScenario:ClientScenario;
+	var chefTutorial:Null<ChefTutorial> = null;
+	var chefTutorialPaperWasReady = false;
 	var pendingClientAdvance = false;
+	var pendingDocumentReturn = false;
+	var fraudConfronted = false;
+	var salaryUpdateAcknowledged = false;
+	var clientHandoutDocs:Array<DeskDocument> = [];
 	var pendingLoanReview:Null<LoanReviewResult> = null;
 
 	var clientImg:FlxSprite;
@@ -77,17 +88,25 @@ class PlayState extends FlxState
 	var clientAnimPhase:Int = 0;
 	var clientAnimTimer:Float = 0;
 	var clientBobOffset:Float = 0;
+	var clientEntranceDelayRemaining = 0.0;
 	var clientDialog:ClientDialog;
 	var beginningDayOverlay:BeginningDayOverlay;
 	var mainMenuOverlay:MainMenuOverlay;
+	var studioLogoSplash:StudioLogoSplash;
+	var officeAmbientAudio:OfficeAmbientAudio;
+	var gameplayMusic:GameplayMusic;
 	var shiftPauseOverlay:ShiftPauseOverlay;
+	var endOfDemoPopup:EndOfDemoPopup;
 	var screenFadeOverlay:ScreenFadeOverlay;
 	var scanModeOverlay:ScanModeOverlay;
+	var deskTutorialCoach:TutorialGuideOverlay;
+	var monitorTutorialCoach:TutorialGuideOverlay;
 	var scanSelectionConsumed = false;
 	var scanClickPending = false;
 	var scanClickTimer = 0.0;
 	var scanClickX = 0.0;
 	var scanClickY = 0.0;
+	var lastLensActive = false;
 	static inline var LEFT_COL_RATIO:Float = 0.3;
 	static inline var CLIENT_H_RATIO:Float = 0.4;
 	static inline var CLIENT_TABLE_H_RATIO:Float = 0.25;
@@ -120,7 +139,12 @@ class PlayState extends FlxState
 	override function create():Void
 	{
 		super.create();
+		GameSettings.load();
 		GameSettings.apply();
+		MainMenuOverlay.preloadAudio();
+
+		mainMenuOverlay = new MainMenuOverlay(showBeginningDaySequence);
+
 		GameVisualFilter.install();
 		DebugOverlay.init();
 		#if FLX_DEBUG
@@ -169,12 +193,13 @@ class PlayState extends FlxState
 		clientImg.scale.set(clientScale, clientScale);
 		clientImg.updateHitbox();
 		clientFinalX = (leftW - clientImg.width) / 2;
-		clientFinalY = clientH - clientImg.height + CLIENT_BOB_AMPLITUDE;
+		clientFinalY = clientH - clientImg.height + CLIENT_BOB_AMPLITUDE + CLIENT_IMAGE_Y_OFFSET;
 		clientImg.x = -clientImg.width;
 		clientImg.y = clientFinalY;
 		clientImg.color = FlxColor.BLACK;
-		clientAnimPhase = 1;
+		clientAnimPhase = 0;
 		clientAnimTimer = 0;
+		clientEntranceDelayRemaining = 0;
 
 		var dialogMaxW = Std.int(leftW * 0.75);
 		clientDialog = new ClientDialog(leftW, 0.0, clientH, dialogMaxW, clientImg, clientFinalY);
@@ -319,11 +344,13 @@ class PlayState extends FlxState
 		passport = new Passport(zones, documentsAbove);
 		passport.visible = false;
 		passport.onDroppedOnPrinter = handleDocumentDroppedOnPrinter;
+		wireDocumentClientWindowHandler(passport);
 		idDocuments = [];
 		for (variant in IdCardLayouts.defaultDeskVariants())
 		{
 			var idDoc = new IdDocument(zones, documentsAbove, variant);
 			idDoc.onDroppedOnPrinter = handleDocumentDroppedOnPrinter;
+			wireDocumentClientWindowHandler(idDoc);
 			idDocuments.push(idDoc);
 			documentsAbove.add(idDoc);
 			stashDocumentOffDesk(idDoc);
@@ -331,6 +358,7 @@ class PlayState extends FlxState
 		bookDocument = new BookDocument(zones, documentsAbove);
 		bookDocument.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
 		bookDocument.onDroppedOnShredder = handleNonPrintableDocumentDrop;
+		bookDocument.hideFromDesk();
 		documentsAbove.add(bookDocument);
 		jobContractDocuments = [];
 		for (variant in JobContractLayouts.defaultDeskVariants())
@@ -338,6 +366,7 @@ class PlayState extends FlxState
 			var jobContractDoc = new JobContractDocument(zones, documentsAbove, variant);
 			jobContractDoc.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
 			jobContractDoc.onDroppedOnShredder = handleNonPrintableDocumentDrop;
+			wireDocumentClientWindowHandler(jobContractDoc);
 			jobContractDocuments.push(jobContractDoc);
 			documentsAbove.add(jobContractDoc);
 			stashDocumentOffDesk(jobContractDoc);
@@ -345,10 +374,8 @@ class PlayState extends FlxState
 		layoutClientTableDocuments();
 
 		magnifyingGlass = new MagnifyingGlass(zones, documentsAbove);
-		magnifyingGlass.placeBeside(bookDocument);
-
 		documentsAbove.add(magnifyingGlass);
-		DeskDocument.onDrawLayerChanged = moveDocumentToLayer;
+		DeskDocument.onDrawLayerChanged = onDocumentDrawLayerChanged;
 		DeskDocument.resolveClientTableLayoutTarget = getClientTableLayoutTarget;
 		DeskDocument.onUpdateDragPresentation = updateDraggedDocPresentation;
 		DeskDocument.isOpenFolderStackUnderDragHover = isOpenFolderStackUnderDragHover;
@@ -361,6 +388,7 @@ class PlayState extends FlxState
 		DeskDocument.magnifierHitsPoint = magnifierHitsPoint;
 		DeskDocument.isOverDeskPropsAtPoint = cursorOverDeskPropsAt;
 		DeskDocument.isAboveDrawLayerBlockingPoint = isAboveDrawLayerBlockingPoint;
+		DeskDocument.shouldHonorClientWindowDrop = shouldHonorClientWindowDrop;
 		addDeskPropsAndDocuments();
 		syncDeskPropCameras();
 
@@ -374,13 +402,20 @@ class PlayState extends FlxState
 		}
 
 		CitizenRegistry.load();
-		currentClientIndex = 0;
+		currentClientIndex = initialClientIndex();
 		currentScenario = ClientScenarios.get(currentClientIndex);
 		applyClientScenario();
 
 		clientDialog.onPassportRequest = function()
 		{
-			spawnPassport();
+		};
+
+		clientDialog.onIdHandoffRequest = function()
+		{
+			if (chefTutorial != null && chefTutorial.needsChefIdHandoff())
+				deliverChefTutorialIdHandoff();
+			else
+				deliverScenarioDocuments(true);
 		};
 
 		clientDialog.onAutoDocumentsRequest = function()
@@ -390,8 +425,47 @@ class PlayState extends FlxState
 
 		clientDialog.onVisitComplete = function()
 		{
+			if (chefTutorial != null && chefTutorial.shouldAdvanceOnVisitComplete)
+			{
+				chefTutorial = null;
+				clearTutorialUiRestrictions();
+				startClientDeparture();
+				return;
+			}
+			if (pendingDocumentReturn)
+				return;
 			if (pendingClientAdvance)
-				advanceToNextClient();
+				startClientDeparture();
+		};
+
+		clientDialog.onPrepareTutorialExit = function()
+		{
+			if (chefTutorial != null)
+				beginChefTutorialIdReturn();
+		};
+
+		clientDialog.onTutorialIntroSteps = function()
+		{
+			if (chefTutorial == null || CitizenRegistry.all.length <= ChefTutorial.CITIZEN_INDEX)
+				return ClientScenarios.chefTutorialIntroBaseSteps();
+			return chefTutorial.buildIntroSteps(buildChefTutorialContext());
+		};
+
+		clientDialog.isScanHintAllowed = function()
+		{
+			if (isClientEntranceBlocking())
+				return false;
+			if (chefTutorial == null)
+				return true;
+			if (chefTutorial.shouldAdvanceOnVisitComplete)
+				return false;
+			return chefTutorial.shouldAllowScanHint();
+		};
+
+		clientDialog.onUnlockScanHint = function()
+		{
+			if (chefTutorial != null)
+				chefTutorial.scanHintUnlocked = true;
 		};
 
 		clientDialog.onScanRequest = function()
@@ -405,26 +479,83 @@ class PlayState extends FlxState
 				scanModeOverlay.setActive(false);
 		};
 
+		clientDialog.onTutorialIdle = function()
+		{
+			if (chefTutorial == null)
+				return;
+			if (chefTutorial.shouldBeginGuidedTraining())
+				chefTutorial.beginGuidedTraining();
+			else if (chefTutorial.shouldMarkLoanWalkthroughReady())
+				chefTutorial.markLoanWalkthroughReady();
+			else if (chefTutorial.shouldBeginLoanGuide())
+				chefTutorial.beginLoanGuide();
+			else if (chefTutorial.shouldResumeAfterLoanQuestion())
+				chefTutorial.resumeAfterLoanQuestion();
+			else if (chefTutorial.shouldCompleteFolderIntro())
+				chefTutorial.onFolderIntroDialogComplete();
+		};
+
+		deskTutorialCoach = new TutorialGuideOverlay();
+		add(deskTutorialCoach);
+
 		monitor = new MonitorOverlay();
 		monitor.setOnPrintRequest(handleMonitorPrintRequest);
 		monitor.setOnPrintChecklistRequest(handleMonitorPrintChecklistRequest);
 		monitor.setOnSubmitForApprovalRequest(handleMonitorSubmitForApprovalRequest);
+		monitor.getScreenUi().setOnLoanApplicationSubmitted(function()
+		{
+			if (chefTutorial != null)
+				chefTutorial.notifyLoanSubmitted();
+		});
 		monitor.setOnConversationLogRequest(function() return clientDialog.getConversationLog());
+		monitor.setValidateFieldEdit(validateMonitorFieldEdit);
+		monitor.setOnFieldValidationFailed(function(path, message)
+		{
+			if (chefTutorial != null && chefTutorial.handlesUnneededFieldEditInCoach(path))
+			{
+				chefTutorial.notifyUnneededFieldEdit();
+				return true;
+			}
+			if (chefTutorial != null && path == "averageAnnualSalary"
+				&& chefTutorial.handlesSalaryValidationInCoach())
+			{
+				chefTutorial.notifySalaryValidationFailed(message);
+				return true;
+			}
+			return false;
+		});
+		monitor.getScreenUi().setShouldRevertOnCoachValidation(function(path:String)
+		{
+			if (chefTutorial != null && chefTutorial.isWrongClientActive())
+				return true;
+			return path != "averageAnnualSalary";
+		});
 		monitor.onMonitorClosed = handleMonitorClosed;
 		monitor.onMonitorSlideOutComplete = handleMonitorSlideOutComplete;
+		monitor.onMonitorSlideInComplete = function()
+		{
+			if (chefTutorial != null)
+				chefTutorial.notifyMonitorSlideInComplete(monitorTutorialCoach, monitor);
+		};
+		monitorTutorialCoach = new TutorialGuideOverlay();
+		monitor.setTutorialCoach(monitorTutorialCoach);
 		add(monitor);
+		syncTutorialCoachCameras();
 
 		beginningDayOverlay = new BeginningDayOverlay();
 		add(beginningDayOverlay);
 
-		mainMenuOverlay = new MainMenuOverlay(showBeginningDaySequence);
-		add(mainMenuOverlay);
+		officeAmbientAudio = new OfficeAmbientAudio();
+		gameplayMusic = new GameplayMusic();
 
 		screenFadeOverlay = new ScreenFadeOverlay();
 		add(screenFadeOverlay);
 
 		shiftPauseOverlay = new ShiftPauseOverlay(showBeginningDaySequence, showMainMenuFromPause, fadeScreenToBlack);
 		add(shiftPauseOverlay);
+
+		endOfDemoPopup = new EndOfDemoPopup(showMainMenuFromPause);
+		add(endOfDemoPopup);
 
 		scanModeOverlay = new ScanModeOverlay(leftW, clientH);
 		ScanModeOverlay.isPointAllowed = isScanModePointAllowed;
@@ -441,28 +572,75 @@ class PlayState extends FlxState
 		{
 			if (actionId == "review_loan_application")
 				startLoanApplicationReview();
+			else if ((actionId == "compare_id_photo" || actionId == "compare_id_passport")
+				&& currentScenario != null && currentScenario.identityFraud && !fraudConfronted)
+			{
+				fraudConfronted = true;
+				pendingDocumentReturn = true;
+				clientDialog.startScriptedConversation(ClientScenarios.fraudConfrontationSteps(), true);
+			}
+			else if (actionId == "compare_id_photo" || actionId == "compare_id_passport")
+			{
+				clientDialog.startFollowUpDialog(["Looks consistent to me."]);
+			}
 			else
+			{
+				if (chefTutorial != null)
+				{
+					if (actionId == "verify_client_details")
+						chefTutorial.onPrintedScanConfirmed();
+					else if (BookScanActions.isBookQuestionId(actionId))
+						chefTutorial.onLoanQuestionAsked(actionId);
+				}
+
 				clientDialog.startBookScanAction(actionId);
+				ChefTutorial.pendingBookScanFarewell = false;
+			}
 		};
+		scanModeOverlay.getCitizenDisplayName = function() return clientDialog.getCitizenDisplayName();
 		add(scanModeOverlay);
 
+		studioLogoSplash = new StudioLogoSplash();
+		add(studioLogoSplash);
+		bringToFront(studioLogoSplash);
+		studioLogoSplash.show(showMainMenuAfterSplash);
+	}
+
+	function showMainMenuAfterSplash():Void
+	{
+		if (studioLogoSplash != null)
+			studioLogoSplash.hide();
+
+		if (mainMenuOverlay == null)
+			mainMenuOverlay = new MainMenuOverlay(showBeginningDaySequence);
+
+		remove(mainMenuOverlay, false);
+		add(mainMenuOverlay);
+		mainMenuOverlay.show(true);
 	}
 
 	override function update(elapsed:Float):Void
 	{
-		GameVisualFilter.ensureAllCameras();
 		scanSelectionConsumed = false;
 		ScanModeOverlay.suppressDocumentPress = false;
 		updateClientEntrance(elapsed);
 		syncCalculatorZone();
 		syncPrinterPauseForMonitor();
 		magnifyingGlass.setHidden(monitor.isActive() || beginningDayOverlay.isShowing || mainMenuOverlay.isShowing
-			|| shiftPauseOverlay.isActive());
+			|| shiftPauseOverlay.isActive() || EndOfDemoPopup.blocksWorldInput() || StudioLogoSplash.blocksWorldInput());
 		updateCalculatorToggleUi();
 		updateCalculatorDisplayVisuals(elapsed);
 		updateCalculatorButtonOverlay();
 
 		var p = FlxG.mouse.getViewPosition();
+
+		if (StudioLogoSplash.blocksWorldInput())
+		{
+			if (FlxG.mouse.justPressed && studioLogoSplash != null)
+				studioLogoSplash.skip();
+			super.update(elapsed);
+			return;
+		}
 
 		if (screenFadeOverlay.isBusy)
 		{
@@ -472,11 +650,18 @@ class PlayState extends FlxState
 		}
 
 		updateScanModeUi(p, elapsed);
+		officeAmbientAudio.update(elapsed);
 
 		if (beginningDayOverlay.isShowing)
 		{
 			if (FlxG.mouse.justPressed)
 				beginningDayOverlay.handleClick(p);
+			super.update(elapsed);
+			return;
+		}
+
+		if (MainMenuOverlay.blocksWorldInput() && !mainMenuOverlay.isShowing)
+		{
 			super.update(elapsed);
 			return;
 		}
@@ -501,8 +686,20 @@ class PlayState extends FlxState
 			return;
 		}
 
-		if (FlxG.keys.justPressed.ESCAPE && !beginningDayOverlay.isShowing && !mainMenuOverlay.isShowing)
+		if (EndOfDemoPopup.blocksWorldInput())
 		{
+			endOfDemoPopup.updateHover();
+			if (FlxG.mouse.justPressed)
+				endOfDemoPopup.handleClick(p);
+			super.update(elapsed);
+			return;
+		}
+
+		if (FlxG.keys.justPressed.ESCAPE && !beginningDayOverlay.isShowing && !mainMenuOverlay.isShowing && !monitor.isActive())
+		{
+			if (scanModeOverlay != null)
+				scanModeOverlay.setActive(false);
+			scanClickPending = false;
 			remove(shiftPauseOverlay, false);
 			add(shiftPauseOverlay);
 			shiftPauseOverlay.show();
@@ -512,8 +709,9 @@ class PlayState extends FlxState
 
 		if (!scanSelectionConsumed && !monitor.isActive() && FlxG.mouse.justPressed && !MonitorOverlay.blocksWorldInput()
 			&& !BeginningDayOverlay.blocksWorldInput() && !MainMenuOverlay.blocksWorldInput()
-			&& !ShiftPauseOverlay.blocksWorldInput() && !ScreenFadeOverlay.blocksWorldInput()
-			&& !scanModeBlocksPoint(p))
+			&& !ShiftPauseOverlay.blocksWorldInput() && !EndOfDemoPopup.blocksWorldInput() && !ScreenFadeOverlay.blocksWorldInput()
+			&& !scanModeBlocksPoint(p)
+			&& (chefTutorial == null || !chefTutorial.blocksDeskInteraction(p.x, p.y, deskTutorialCoach)))
 		{
 			tryPickupPrintedPaper(p);
 		}
@@ -528,21 +726,34 @@ class PlayState extends FlxState
 			if (FlxG.mouse.justReleased)
 				monitor.handleScreenRelease();
 
+			updateChefTutorialGuide(elapsed);
 			super.update(elapsed);
 			syncDocumentLayers();
+			finalizeTutorialOverlay();
 
 			if (FlxG.mouse.justPressed)
 			{
+				var monitorCoach = monitorTutorialCoach;
+				if (monitorCoach.isShowing && monitorCoach.isPointOnOverlay(p.x, p.y))
+					return;
+
 				if (monitor.isShowing && monitor.containsInteractivePoint(p))
-					monitor.handleScreenClick(p);
-				else
+				{
+					if (chefTutorial == null || chefTutorial.isMonitorClickAllowed(p.x, p.y, monitor.getScreenUi(), monitorCoach))
+						monitor.handleScreenClick(p);
+				}
+				else if (chefTutorial == null || !chefTutorial.blocksMonitorDismiss())
 					monitor.hide();
 			}
 			return;
 		}
 
+		updateChefTutorialGuide(elapsed);
+		updateChefTutorialProgressTriggers();
+
 		super.update(elapsed);
 		syncDocumentLayers();
+		finalizeTutorialOverlay();
 
 		if (scanSelectionConsumed)
 			return;
@@ -557,6 +768,9 @@ class PlayState extends FlxState
 		if (clientDialog.consumedClick)
 			return;
 
+		if (chefTutorial != null && chefTutorial.blocksDeskInteraction(p.x, p.y, deskTutorialCoach))
+			return;
+
 		if (scanModeOverlay != null && scanModeOverlay.isActive)
 			return;
 
@@ -566,7 +780,21 @@ class PlayState extends FlxState
 		if (!isComputerZoneClick() || isDocumentAtMouse())
 			return;
 
-		monitor.show();
+		if (chefTutorial != null && currentScenario.isTutorial && !chefTutorial.allowsComputerClick()
+			&& !(chefTutorial.isLoanSalaryComputerClickReady() && isComputerZoneClick()))
+			return;
+
+		resetCalculatorButtonOverlayVisuals();
+		if (chefTutorial != null
+			&& (chefTutorial.allowsComputerClick() || chefTutorial.isLoanSalaryComputerClickReady()))
+		{
+			chefTutorial.requestComputerOpen(deskTutorialCoach, function()
+			{
+				monitor.show();
+			});
+		}
+		else
+			monitor.show();
 	}
 
 	function addDeskPropsAndDocuments():Void
@@ -598,22 +826,106 @@ class PlayState extends FlxState
 
 	function syncDocumentLayers():Void
 	{
-		// Place folder first so other closed docs stack above it within documentsAbove.
-		if (loanFolder != null)
-			moveDocumentToLayer(loanFolder);
-		moveDocumentToLayer(passport);
-		for (idDoc in idDocuments)
-			moveDocumentToLayer(idDoc);
-		for (bankDoc in printedBankDocuments)
-			moveDocumentToLayer(bankDoc);
-		moveDocumentToLayer(bookDocument);
-		for (jobContractDoc in jobContractDocuments)
-			moveDocumentToLayer(jobContractDoc);
-		moveDocumentToLayer(magnifyingGlass);
-		for (paper in printedPapers)
-			movePrintedPaperToLayer(paper);
-		syncAllBankDocumentTextOverlays();
-		syncOpenDocumentCameras();
+		var lensActive = magnifyingGlass != null && magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
+		var dragging = DeskDocument.currentDrag != null;
+		var needLensSync = lensActive || lastLensActive || dragging;
+
+		if (documentLayersNeedSync || dragging)
+		{
+			// Place folder first so other closed docs stack above it within documentsAbove.
+			if (loanFolder != null)
+				moveDocumentToLayer(loanFolder);
+			moveDocumentToLayer(passport);
+			for (idDoc in idDocuments)
+				moveDocumentToLayer(idDoc);
+			for (bankDoc in printedBankDocuments)
+				moveDocumentToLayer(bankDoc);
+			moveDocumentToLayer(bookDocument);
+			if (bookDocument.slideAboveTableDocs)
+				bookDocument.bringToFrontInLayer();
+			for (jobContractDoc in jobContractDocuments)
+				moveDocumentToLayer(jobContractDoc);
+			moveDocumentToLayer(magnifyingGlass);
+			for (paper in printedPapers)
+				movePrintedPaperToLayer(paper);
+			documentLayersNeedSync = false;
+		}
+
+		if (bankTextOverlaysNeedSync || dragging)
+		{
+			syncAllBankDocumentTextOverlays();
+			bankTextOverlaysNeedSync = false;
+		}
+
+		if (needLensSync)
+			syncOpenDocumentCameras();
+		lastLensActive = lensActive;
+
+		updateClientGiveBackHint();
+	}
+
+	function updateClientGiveBackHint():Void
+	{
+		if (!pendingDocumentReturn)
+		{
+			clientDialog.setGiveBackHintVisible(false);
+			return;
+		}
+
+		var drag = DeskDocument.currentDrag;
+		if (drag == null || !isRegisteredClientHandout(drag))
+		{
+			clientDialog.setGiveBackHintVisible(false);
+			return;
+		}
+
+		var mouse = FlxG.mouse.getViewPosition();
+		clientDialog.setGiveBackHintVisible(clientDialog.isPointInClientArea(mouse.x, mouse.y));
+	}
+
+	function shouldHonorClientWindowDrop(doc:DeskDocument, mx:Float, my:Float):Bool
+	{
+		if (!pendingDocumentReturn || !isRegisteredClientHandout(doc))
+			return false;
+		return clientDialog.isPointInClientArea(mx, my);
+	}
+
+	function returnStrandedDocsFromClientWindow():Void
+	{
+		for (member in documentsAbove.members)
+			returnStrandedDocFromClientWindow(Std.downcast(member, DeskDocument));
+		for (member in documentsBelow.members)
+			returnStrandedDocFromClientWindow(Std.downcast(member, DeskDocument));
+		layoutClientTableDocuments();
+	}
+
+	function returnStrandedDocFromClientWindow(doc:DeskDocument):Void
+	{
+		if (doc == null || !doc.visible || !doc.isOnClientWindow())
+			return;
+
+		var cx = doc.x + doc.width * 0.5;
+		var cy = doc.y + doc.height * 0.5;
+		if (shouldHonorClientWindowDrop(doc, cx, cy))
+			return;
+
+		doc.placeOnClientTable();
+	}
+
+	function isRegisteredClientHandout(doc:DeskDocument):Bool
+	{
+		return clientHandoutDocs.indexOf(doc) >= 0;
+	}
+
+	function onDocumentDrawLayerChanged(doc:DeskDocument):Void
+	{
+		moveDocumentToLayer(doc);
+	}
+
+	function markDocumentLayersDirty():Void
+	{
+		documentLayersNeedSync = true;
+		bankTextOverlaysNeedSync = true;
 	}
 
 	function syncAllBankDocumentTextOverlays():Void
@@ -645,6 +957,7 @@ class PlayState extends FlxState
 			if (folder != null)
 				folder.syncStoredCopiesToLayer();
 		}
+		markDocumentLayersDirty();
 	}
 
 	function moveDocumentToLayer(doc:DeskDocument):Void
@@ -660,6 +973,7 @@ class PlayState extends FlxState
 		var bankDoc = Std.downcast(doc, BankDocument);
 		if (bankDoc != null && bankDoc.isStoredInLoanFolder())
 			bankDoc.refreshStoredTextOverlays();
+		markDocumentLayersDirty();
 	}
 
 	function resolveDrawLayerForDoc(doc:DeskDocument):FlxGroup
@@ -712,6 +1026,7 @@ class PlayState extends FlxState
 			doc.bringToFrontInLayer();
 			if (loanFolder != null)
 				loanFolder.syncStoredCopiesToLayer();
+			markDocumentLayersDirty();
 		}
 	}
 
@@ -888,7 +1203,14 @@ class PlayState extends FlxState
 			var lensActive = coverCam != null && magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
 			if (lensActive)
 				cams.push(coverCam);
-			magnifyingGlass.cameras = cams;
+			if (!sameCameras(magnifyingGlass.cameras, cams))
+				magnifyingGlass.cameras = cams;
+		}
+
+		if (sameCameras(clientPanel.cameras, cams))
+		{
+			syncTutorialCoachCameras();
+			return;
 		}
 
 		clientPanel.cameras = cams;
@@ -910,6 +1232,54 @@ class PlayState extends FlxState
 		calculatorDisplayText.cameras = cams;
 		for (overlay in calculatorBtnOverlays)
 			overlay.cameras = cams;
+
+		syncTutorialCoachCameras();
+	}
+
+	function getGameplayOverlayCameras():Array<FlxCamera>
+	{
+		var cams = [FlxG.camera];
+		if (magnifyingGlass != null)
+		{
+			var lensCam = magnifyingGlass.lensCam;
+			var coverCam = magnifyingGlass.coverCam;
+			if (lensCam != null)
+				cams.push(lensCam);
+			if (coverCam != null)
+				cams.push(coverCam);
+		}
+		return cams;
+	}
+
+	function syncTutorialCoachCameras():Void
+	{
+		var cams = [FlxG.camera];
+		if (magnifyingGlass != null)
+		{
+			var coverCam = magnifyingGlass.coverCam;
+			var lensActive = coverCam != null && magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
+			if (lensActive)
+				cams.push(coverCam);
+		}
+		if (deskTutorialCoach != null)
+			deskTutorialCoach.setCameras(cams);
+		if (monitorTutorialCoach != null)
+			monitorTutorialCoach.setCameras(cams);
+	}
+
+	function finalizeTutorialOverlay():Void
+	{
+		syncTutorialCoachCameras();
+		var preferMonitorCoach = chefTutorial != null && chefTutorial.isMonitorGuidePhase() && monitor.isActive();
+		if (preferMonitorCoach)
+		{
+			if (monitor != null)
+				bringToFront(monitor);
+		}
+		else if (deskTutorialCoach != null && deskTutorialCoach.isShowing)
+			bringToFront(deskTutorialCoach);
+		else if (monitorTutorialCoach != null && monitorTutorialCoach.isShowing)
+			bringToFront(monitorTutorialCoach);
 	}
 
 	function syncOpenDocumentCameras():Void
@@ -917,7 +1287,10 @@ class PlayState extends FlxState
 		if (magnifyingGlass == null)
 			return;
 
-		syncDeskPropCameras();
+		var lensActive = magnifyingGlass.visible && magnifyingGlass.isCurrentlyOpen();
+		if (!lensActive)
+			syncDeskPropCameras();
+
 		syncDocumentLensCameras(passport);
 		for (idDoc in idDocuments)
 			syncDocumentLensCameras(idDoc);
@@ -1058,6 +1431,160 @@ class PlayState extends FlxState
 		clientDialog.setCitizenName(citizen.firstName + " " + citizen.lastName);
 	}
 
+	function idCardCitizenForScenario(citizen:Citizen):Citizen
+	{
+		if (currentScenario == null || currentScenario.idCardCitizenIndex < 0)
+			return citizen;
+
+		var idx = currentScenario.idCardCitizenIndex;
+		if (idx < 0 || idx >= CitizenRegistry.all.length)
+			return citizen;
+
+		return CitizenRegistry.all[idx];
+	}
+
+	function wireDocumentClientWindowHandler(doc:DeskDocument):Void
+	{
+		doc.onDroppedOnClientWindow = handleDocumentDroppedOnClientWindow;
+	}
+
+	function handleDocumentDroppedOnClientWindow(doc:DeskDocument):Void
+	{
+		checkClientDocumentReturn();
+	}
+
+	function clearClientHandoutDocs():Void
+	{
+		clientHandoutDocs = [];
+	}
+
+	function registerClientHandout(doc:DeskDocument):Void
+	{
+		if (doc == null || clientHandoutDocs.indexOf(doc) >= 0)
+			return;
+		clientHandoutDocs.push(doc);
+	}
+
+	function resetScenarioVisitState():Void
+	{
+		pendingDocumentReturn = false;
+		fraudConfronted = false;
+		salaryUpdateAcknowledged = false;
+		clearClientHandoutDocs();
+	}
+
+	function checkClientDocumentReturn():Void
+	{
+		if (!pendingDocumentReturn || clientHandoutDocs.length == 0)
+			return;
+
+		for (doc in clientHandoutDocs)
+		{
+			if (!doc.visible || !doc.isOnClientWindow())
+				return;
+		}
+
+		pendingDocumentReturn = false;
+		consumeReturnedClientHandouts();
+
+		if (chefTutorial != null && chefTutorial.awaitingIdReturn)
+		{
+			chefTutorial.awaitingIdReturn = false;
+			chefTutorial.shouldAdvanceOnVisitComplete = true;
+			if (clientDialog.canAcceptFollowUp())
+				clientDialog.startScriptedConversation(ClientScenarios.chefTutorialIdReturnThanksSteps(), true);
+			return;
+		}
+
+		startClientDeparture();
+	}
+
+	function beginChefTutorialIdReturn():Void
+	{
+		if (chefTutorial == null)
+			return;
+
+		chefTutorial.awaitingIdReturn = true;
+		pendingDocumentReturn = true;
+
+		var chefId = findIdDocument(Lorian);
+		if (chefId != null && clientHandoutDocs.indexOf(chefId) < 0)
+			registerClientHandout(chefId);
+	}
+
+	function consumeReturnedClientHandouts():Void
+	{
+		for (doc in clientHandoutDocs)
+			stashDocumentOffDesk(doc);
+		clearClientHandoutDocs();
+	}
+
+	function isScenarioAnnualSalaryCorrect(citizen:Citizen):Bool
+	{
+		if (currentScenario == null || !currentScenario.needsAnnualSalaryUpdate())
+			return false;
+
+		var target = currentScenario.expectedAnnualSalary;
+		var tolerance = currentScenario.annualSalaryTolerance;
+		return Math.abs(citizen.averageAnnualSalary - target) <= tolerance;
+	}
+
+	function validateMonitorFieldEdit(citizen:Citizen, path:String, value:String):Null<String>
+	{
+		if (chefTutorial != null && chefTutorial.shouldBlockFieldEdit(citizen, path))
+			return ChefTutorial.unneededFieldEditCoachText();
+
+		if (path != "averageAnnualSalary" || value.length == 0)
+			return null;
+
+		var salary = Std.parseFloat(StringTools.trim(value));
+		if (salary == null)
+			return null;
+
+		var rounded = Math.round(salary);
+
+		if (chefTutorial != null && CitizenRegistry.indexOf(citizen) == ChefTutorial.CITIZEN_INDEX)
+		{
+			if (rounded != ChefTutorial.TARGET_SALARY)
+				return ChefTutorial.salaryValidationMessage();
+			return null;
+		}
+
+		if (currentScenario != null && currentScenario.needsAnnualSalaryUpdate()
+			&& CitizenRegistry.indexOf(citizen) == currentScenario.citizenIndex)
+		{
+			var target = Std.int(currentScenario.expectedAnnualSalary);
+			if (Math.abs(rounded - target) > currentScenario.annualSalaryTolerance)
+				return 'Sorry! Annual salary needs\nto be $target LOR.';
+		}
+
+		return null;
+	}
+
+	function tryScenarioSalaryProgressDialogue():Void
+	{
+		if (currentScenario == null || !currentScenario.needsAnnualSalaryUpdate())
+			return;
+		if (salaryUpdateAcknowledged || pendingDocumentReturn)
+			return;
+		if (CitizenRegistry.all.length == 0)
+			return;
+
+		var citizenIdx = currentScenario.citizenIndex;
+		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
+			return;
+
+		var citizen = CitizenRegistry.all[citizenIdx];
+		if (!isScenarioAnnualSalaryCorrect(citizen))
+			return;
+		if (!clientDialog.canAcceptFollowUp())
+			return;
+
+		salaryUpdateAcknowledged = true;
+		pendingDocumentReturn = true;
+		clientDialog.startScriptedConversation(ClientScenarios.kethranSalaryCompleteSteps(), true);
+	}
+
 	function applyClientScenario():Void
 	{
 		if (CitizenRegistry.all.length == 0)
@@ -1068,27 +1595,45 @@ class PlayState extends FlxState
 		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
 			citizenIdx = 0;
 
+		chefTutorial = currentScenario.isTutorial ? new ChefTutorial() : null;
+		chefTutorialPaperWasReady = false;
+		resetScenarioVisitState();
+
 		clientDialog.setScenario(currentScenario);
+		bookDocument.setHidePassportBookQuestion(true);
 		applyCurrentCitizen(CitizenRegistry.all[citizenIdx]);
 		setupDefaultClientTable();
 	}
 
 	function setupDefaultClientTable():Void
 	{
-		passport.visible = false;
-		if (documentsAbove.members.indexOf(passport) >= 0)
-			documentsAbove.remove(passport, true);
+		hidePassportOnDesk();
 
 		for (idDoc in idDocuments)
 			stashDocumentOffDesk(idDoc);
 		for (jobContractDoc in jobContractDocuments)
 			stashDocumentOffDesk(jobContractDoc);
 
-		bookDocument.prepareClientHandoff();
+		if (currentScenario != null && currentScenario.isTutorial)
+			stashDocumentOffDesk(bookDocument);
+		else
+			ensureGuideBookOnClientTable();
+
+		magnifyingGlass.placeOnClientTable();
 		layoutClientTableDocuments();
-		magnifyingGlass.placeBeside(bookDocument);
-		moveDocumentToLayer(bookDocument);
 		moveDocumentToLayer(magnifyingGlass);
+	}
+
+	function ensureGuideBookOnClientTable():Void
+	{
+		if (bookDocument == null)
+			return;
+
+		bookDocument.placeClosedOnClientTable();
+		if (documentsAbove.members.indexOf(bookDocument) < 0)
+			documentsAbove.add(bookDocument);
+		moveDocumentToLayer(bookDocument);
+		layoutClientTableDocuments();
 	}
 
 	function stashDocumentOffDesk(doc:DeskDocument):Void
@@ -1096,15 +1641,81 @@ class PlayState extends FlxState
 		doc.hideFromDesk();
 	}
 
-	function deliverScenarioDocuments():Void
+	function deliverScenarioDocuments(?fromClient:Bool = false):Void
 	{
-		spawnPassport();
-		if (currentScenario.idVariant != null)
-			spawnClientIdDocument(currentScenario.idVariant);
+		if (fromClient)
+			clientDialog.markScenarioDocumentsDelivered();
+
+		clearClientHandoutDocs();
+
+		if (currentScenario != null && currentScenario.passportIncludedInOpening)
+		{
+			spawnPassport();
+			registerClientHandout(passport);
+		}
+
+		if (currentScenario != null && currentScenario.idVariant != null)
+		{
+			spawnClientIdDocument(currentScenario.idVariant, fromClient);
+			registerClientHandout(findIdDocument(currentScenario.idVariant));
+		}
+
+		if (currentScenario != null && currentScenario.jobContractVariant != null)
+		{
+			spawnJobContractDocument(currentScenario.jobContractVariant);
+			registerClientHandout(findJobContractDocument(currentScenario.jobContractVariant));
+		}
+
 		layoutClientTableDocuments();
 	}
 
-	function spawnClientIdDocument(variant:IdCardVariant):Void
+	function findIdDocument(variant:IdCardVariant):Null<IdDocument>
+	{
+		for (idDoc in idDocuments)
+		{
+			if (idDoc.getVariant() == variant)
+				return idDoc;
+		}
+		return null;
+	}
+
+	function findJobContractDocument(variant:JobContractVariant):Null<JobContractDocument>
+	{
+		for (jobContractDoc in jobContractDocuments)
+		{
+			if (jobContractDoc.getVariant() == variant)
+				return jobContractDoc;
+		}
+		return null;
+	}
+
+	function spawnJobContractDocument(variant:JobContractVariant):Void
+	{
+		for (jobContractDoc in jobContractDocuments)
+		{
+			if (jobContractDoc.getVariant() != variant)
+				continue;
+
+			jobContractDoc.prepareClientHandoff();
+			var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
+			jobContractDoc.cameras = [FlxG.camera];
+			if (lensCam != null)
+				jobContractDoc.cameras.push(lensCam);
+
+			if (documentsAbove.members.indexOf(jobContractDoc) < 0)
+				documentsAbove.add(jobContractDoc);
+
+			var target = getClientTableLayoutTarget(jobContractDoc);
+			jobContractDoc.setPosition(target.x, zones.clientTableY - jobContractDoc.height);
+			jobContractDoc.angle = 10;
+
+			FlxTween.tween(jobContractDoc, {y: target.y, angle: 6.0}, 0.5, {ease: FlxEase.bounceOut});
+			moveDocumentToLayer(jobContractDoc);
+			return;
+		}
+	}
+
+	function spawnClientIdDocument(variant:IdCardVariant, ?fromClient:Bool = false):Void
 	{
 		for (idDoc in idDocuments)
 		{
@@ -1121,10 +1732,19 @@ class PlayState extends FlxState
 				documentsAbove.add(idDoc);
 
 			var target = getClientTableLayoutTarget(idDoc);
-			idDoc.setPosition(target.x, zones.clientTableY - idDoc.height);
-			idDoc.angle = 12;
+			if (fromClient)
+			{
+				var startX = clientFinalX + (clientImg.width - idDoc.width) * 0.5;
+				var startY = clientFinalY + clientImg.height * 0.35;
+				idDoc.playDropFromClient(startX, startY, target.x, target.y, 8.0);
+			}
+			else
+			{
+				idDoc.setPosition(target.x, zones.clientTableY - idDoc.height);
+				idDoc.angle = 12;
+				FlxTween.tween(idDoc, {y: target.y, angle: 8.0}, 0.5, {ease: FlxEase.bounceOut});
+			}
 
-			FlxTween.tween(idDoc, {y: target.y, angle: 8.0}, 0.5, {ease: FlxEase.bounceOut});
 			moveDocumentToLayer(idDoc);
 			return;
 		}
@@ -1138,15 +1758,31 @@ class PlayState extends FlxState
 		clientImg.scale.set(clientScale, clientScale);
 		clientImg.updateHitbox();
 		clientFinalX = (zones.leftW - clientImg.width) / 2;
-		clientFinalY = zones.clientH - clientImg.height + CLIENT_BOB_AMPLITUDE;
+		clientFinalY = zones.clientH - clientImg.height + CLIENT_BOB_AMPLITUDE + CLIENT_IMAGE_Y_OFFSET;
 	}
 
 	function setCitizenOnClientDocuments(citizen:Citizen):Void
 	{
+		var idCitizen = idCardCitizenForScenario(citizen);
+		var idPortraitPath = currentScenario != null
+			? currentScenario.portraitPath
+			: ClientPortraits.pathForClientSlot(currentClientIndex);
 		for (idDoc in idDocuments)
-			idDoc.setCitizen(citizen);
+			idDoc.setCitizen(idCitizen, idPortraitPath);
 		for (bankDoc in printedBankDocuments)
 			bankDoc.setCitizen(citizen);
+	}
+
+	function sameCameras(a:Array<FlxCamera>, b:Array<FlxCamera>):Bool
+	{
+		if (a == null || b == null)
+			return a == b;
+		if (a.length != b.length)
+			return false;
+		for (i in 0...a.length)
+			if (a[i] != b[i])
+				return false;
+		return true;
 	}
 
 	function syncDocumentLensCameras(doc:DeskDocument):Void
@@ -1161,6 +1797,8 @@ class PlayState extends FlxState
 
 		if (!lensActive)
 		{
+			if (sameCameras(doc.cameras, updated))
+				return;
 			doc.cameras = updated;
 			return;
 		}
@@ -1171,6 +1809,8 @@ class PlayState extends FlxState
 		{
 			if (coverCam != null)
 				updated.push(coverCam);
+			if (sameCameras(doc.cameras, updated))
+				return;
 			doc.cameras = updated;
 			return;
 		}
@@ -1178,6 +1818,8 @@ class PlayState extends FlxState
 		var docIndex = documentsBelow.members.indexOf(doc);
 		if (docIndex < 0)
 		{
+			if (sameCameras(doc.cameras, updated))
+				return;
 			doc.cameras = updated;
 			return;
 		}
@@ -1185,6 +1827,8 @@ class PlayState extends FlxState
 		var magnifierIndex = documentsBelow.members.indexOf(magnifyingGlass);
 		if (magnifierIndex < 0)
 		{
+			if (sameCameras(doc.cameras, updated))
+				return;
 			doc.cameras = updated;
 			return;
 		}
@@ -1197,6 +1841,8 @@ class PlayState extends FlxState
 		else if (shouldCover && coverCam != null)
 			updated.push(coverCam);
 
+		if (sameCameras(doc.cameras, updated))
+			return;
 		doc.cameras = updated;
 	}
 
@@ -1223,14 +1869,31 @@ class PlayState extends FlxState
 		calculatorDisplayText.setPosition(x + textPad, y + h * 0.12);
 		calculatorDisplayText.fieldWidth = Math.max(1, w - textPad);
 		var fontSize = Std.int(Math.max(12, h * 0.62));
-		calculatorDisplayText.setFormat(null, fontSize, FlxColor.fromRGB(76, 118, 84), "right");
-		calculatorDisplayText.setBorderStyle(OUTLINE, FlxColor.fromRGB(12, 28, 14), 1);
-		calculatorDisplayText.text = formatCalculatorForUi(calculatorDisplayValue);
+		if (fontSize != calculatorDisplayLastFontSize)
+		{
+			calculatorDisplayLastFontSize = fontSize;
+			calculatorDisplayText.setFormat(null, fontSize, FlxColor.fromRGB(76, 118, 84), "right");
+			calculatorDisplayText.setBorderStyle(OUTLINE, FlxColor.fromRGB(12, 28, 14), 1);
+		}
+
+		var displayText = formatCalculatorForUi(calculatorDisplayValue);
+		if (displayText != calculatorDisplayLastValue)
+		{
+			calculatorDisplayLastValue = displayText;
+			calculatorDisplayText.text = displayText;
+		}
 		calculatorDisplayText.alpha = 0.82;
+	}
+
+	function initialClientIndex():Int
+	{
+		return 0;
 	}
 
 	function resetToBeginning():Void
 	{
+		CitizenRegistry.resetForNewGame();
+
 		if (monitor.isShowing)
 			monitor.hide();
 
@@ -1256,16 +1919,15 @@ class PlayState extends FlxState
 		for (idDoc in idDocuments)
 			stashDocumentOffDesk(idDoc);
 		clearAllPrintedBankDocuments();
-		bookDocument.prepareClientHandoff();
 		for (jobContractDoc in jobContractDocuments)
 			stashDocumentOffDesk(jobContractDoc);
+		bookDocument.resetForNewDay();
+		magnifyingGlass.placeOnClientTable();
 		layoutClientTableDocuments();
-		magnifyingGlass.placeBeside(bookDocument);
 		for (idDoc in idDocuments)
 			moveDocumentToLayer(idDoc);
 		for (bankDoc in printedBankDocuments)
 			moveDocumentToLayer(bankDoc);
-		moveDocumentToLayer(bookDocument);
 		for (jobContractDoc in jobContractDocuments)
 			moveDocumentToLayer(jobContractDoc);
 		moveDocumentToLayer(magnifyingGlass);
@@ -1273,14 +1935,21 @@ class PlayState extends FlxState
 		clientImg.x = -clientImg.width;
 		clientImg.y = clientFinalY;
 		clientImg.color = FlxColor.BLACK;
-		clientAnimPhase = 1;
+		clientAnimPhase = 0;
 		clientAnimTimer = 0;
 		clientBobOffset = 0;
+		clientEntranceDelayRemaining = 0;
 
 		GameClock.reset();
 		clientDialog.resetForNewDay();
-		currentClientIndex = 0;
+		currentClientIndex = initialClientIndex();
+		chefTutorial = null;
+		clearTutorialUiRestrictions();
 		pendingClientAdvance = false;
+		pendingDocumentReturn = false;
+		fraudConfronted = false;
+		salaryUpdateAcknowledged = false;
+		clearClientHandoutDocs();
 		pendingLoanReview = null;
 		applyClientScenario();
 
@@ -1334,14 +2003,33 @@ class PlayState extends FlxState
 
 	function showBeginningDaySequence():Void
 	{
+		gameplayMusic.stop();
+		officeAmbientAudio.stop();
 		screenFadeOverlay.reset();
 		remove(beginningDayOverlay, false);
 		add(beginningDayOverlay);
-		beginningDayOverlay.show(resetToBeginning);
+		beginningDayOverlay.onStartDayPressed = onBeginningDayStartPressed;
+		beginningDayOverlay.show(resetToBeginning, startChefEntranceDelay);
+		mainMenuOverlay.completeNewGameTransition();
+	}
+
+	function onBeginningDayStartPressed():Void
+	{
+		mainMenuOverlay.releaseMenuMusicForGameplay();
+		gameplayMusic.start();
+		officeAmbientAudio.start();
+	}
+
+	function startChefEntranceDelay():Void
+	{
+		beginClientEntrance();
 	}
 
 	function showMainMenuFromPause():Void
 	{
+		gameplayMusic.stop();
+		officeAmbientAudio.stop();
+		mainMenuOverlay.stopMenuMusicForReturnToMenu();
 		screenFadeOverlay.reset();
 		remove(mainMenuOverlay, false);
 		add(mainMenuOverlay);
@@ -1505,10 +2193,33 @@ class PlayState extends FlxState
 		overlay.y = calculatorObj.y + top * scale;
 	}
 
+	function resetCalculatorButtonOverlayVisuals():Void
+	{
+		for (i in 0...calculatorBtnOverlays.length)
+		{
+			var tween = calculatorBtnClickTweens[i];
+			if (tween != null)
+			{
+				tween.cancel();
+				calculatorBtnClickTweens[i] = null;
+			}
+			calculatorBtnOverlays[i].alpha = 0.0;
+		}
+	}
+
 	function fadeCalculatorButtonOverlays(elapsed:Float):Void
 	{
-		for (overlay in calculatorBtnOverlays)
+		for (i in 0...calculatorBtnOverlays.length)
+		{
+			var tween = calculatorBtnClickTweens[i];
+			if (tween != null)
+			{
+				tween.cancel();
+				calculatorBtnClickTweens[i] = null;
+			}
+			var overlay = calculatorBtnOverlays[i];
 			overlay.alpha += (0 - overlay.alpha) * Math.min(1.0, elapsed * 12.0);
+		}
 	}
 
 	function updateCalculatorButtonInput(mousePos:flixel.math.FlxPoint):Void
@@ -1993,18 +2704,59 @@ class PlayState extends FlxState
 			ease: FlxEase.quadOut,
 			onComplete: function(_)
 			{
-				calculatorBtnClickTweens[index] = FlxTween.tween(overlay, {alpha: 0.26}, 0.1, {ease: FlxEase.quadInOut});
+				calculatorBtnClickTweens[index] = FlxTween.tween(overlay, {alpha: 0.0}, 0.1, {
+					ease: FlxEase.quadInOut,
+					onComplete: function(_)
+					{
+						calculatorBtnClickTweens[index] = null;
+					}
+				});
 			}
 		});
 	}
 
+	static inline var CLIENT_ENTRANCE_DELAY:Float = 5.0;
 	static inline var CLIENT_WALK_DURATION:Float = 1.1;
 	static inline var CLIENT_REVEAL_DURATION:Float = 0.5;
+	static inline var CLIENT_HANDOFF_PAUSE:Float = 2.0;
 	static inline var CLIENT_BOB_SPEED:Float = 6.0;
 	static inline var CLIENT_BOB_AMPLITUDE:Float = 4.0;
+	static inline var CLIENT_IMAGE_Y_OFFSET:Float = 6.0;
+
+	function placeGuideBookOnEmployerTable():Void
+	{
+		bookDocument.placeOpenOnEmployerTableCenter();
+		bookDocument.refreshOverlaysNow();
+		magnifyingGlass.placeOnClientTable();
+		moveDocumentToLayer(bookDocument);
+		moveDocumentToLayer(magnifyingGlass);
+	}
+
+	function isClientEntranceBlocking():Bool
+	{
+		return clientEntranceDelayRemaining > 0 || clientAnimPhase != 0;
+	}
+
+	function beginClientEntrance():Void
+	{
+		clientAnimPhase = 1;
+		clientAnimTimer = 0;
+		clientBobOffset = 0;
+	}
 
 	function updateClientEntrance(elapsed:Float):Void
 	{
+		if (clientEntranceDelayRemaining > 0)
+		{
+			clientEntranceDelayRemaining -= elapsed;
+			if (clientEntranceDelayRemaining <= 0)
+			{
+				clientEntranceDelayRemaining = 0;
+				beginClientEntrance();
+			}
+			return;
+		}
+
 		if (clientAnimPhase == 0)
 			return;
 
@@ -2041,6 +2793,117 @@ class PlayState extends FlxState
 				clientDialog.startScenarioDialog();
 			}
 		}
+		else if (clientAnimPhase == 3)
+		{
+			var t = Math.min(clientAnimTimer / CLIENT_REVEAL_DURATION, 1.0);
+			var eased = FlxEase.sineIn(t);
+			var c = 255 - Std.int(eased * 255);
+			clientImg.color = FlxColor.fromRGB(c, c, c);
+
+			if (t >= 1.0)
+			{
+				clientImg.color = FlxColor.BLACK;
+				clientAnimPhase = 4;
+				clientAnimTimer = 0;
+			}
+		}
+		else if (clientAnimPhase == 4)
+		{
+			var t = Math.min(clientAnimTimer / CLIENT_WALK_DURATION, 1.0);
+			var eased = FlxEase.quadIn(t);
+			clientImg.x = clientFinalX - (clientFinalX + clientImg.width) * eased;
+
+			clientBobOffset += elapsed * CLIENT_BOB_SPEED;
+			clientImg.y = clientFinalY + Math.sin(clientBobOffset) * CLIENT_BOB_AMPLITUDE;
+
+			if (t >= 1.0)
+			{
+				clientImg.x = -clientImg.width;
+				clientImg.y = clientFinalY;
+				clientImg.color = FlxColor.BLACK;
+				clientAnimPhase = 5;
+				clientAnimTimer = 0;
+			}
+		}
+		else if (clientAnimPhase == 5)
+		{
+			if (clientAnimTimer >= CLIENT_HANDOFF_PAUSE)
+				advanceToNextClientPreservingDesk();
+		}
+	}
+
+	function startClientDeparture():Void
+	{
+		returnStrandedDocsFromClientWindow();
+		clientAnimPhase = 3;
+		clientAnimTimer = 0;
+		clientBobOffset = 0;
+	}
+
+	function applyClientScenarioPreservingDesk():Void
+	{
+		if (CitizenRegistry.all.length == 0)
+			return;
+
+		currentScenario = ClientScenarios.get(currentClientIndex);
+		var citizenIdx = currentScenario.citizenIndex;
+		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
+			citizenIdx = 0;
+
+		chefTutorial = null;
+		resetScenarioVisitState();
+		clientDialog.setScenario(currentScenario);
+		bookDocument.setHidePassportBookQuestion(true);
+		hidePassportOnDesk();
+		applyCurrentCitizen(CitizenRegistry.all[citizenIdx]);
+	}
+
+	function advanceToNextClientPreservingDesk():Void
+	{
+		pendingClientAdvance = false;
+		pendingDocumentReturn = false;
+		fraudConfronted = false;
+		salaryUpdateAcknowledged = false;
+		clearClientHandoutDocs();
+		pendingLoanReview = null;
+
+		if (currentClientIndex >= ClientScenarios.LAST_PLAYABLE_CLIENT_INDEX)
+		{
+			showEndOfDemoPopup();
+			return;
+		}
+
+		var leavingTutorial = currentScenario != null && currentScenario.isTutorial;
+		currentClientIndex++;
+		if (currentClientIndex >= ClientScenarios.count())
+			currentClientIndex = ClientScenarios.count() - 1;
+
+		clientDialog.resetForNewDay();
+		applyClientScenarioPreservingDesk();
+		clearTutorialUiRestrictions();
+		if (leavingTutorial)
+		{
+			monitor.resetScreen();
+			monitor.hide();
+		}
+		clientDialog.suppressAutoDocumentDelivery();
+
+		clientImg.x = -clientImg.width;
+		clientImg.y = clientFinalY;
+		clientImg.color = FlxColor.BLACK;
+		clientAnimPhase = 1;
+		clientAnimTimer = 0;
+		clientBobOffset = 0;
+	}
+
+	function showEndOfDemoPopup():Void
+	{
+		clientAnimPhase = 0;
+		clientAnimTimer = 0;
+		remove(endOfDemoPopup, false);
+		add(endOfDemoPopup);
+		bringToFront(endOfDemoPopup);
+		endOfDemoPopup.show();
 	}
 
 	function handleNonPrintableDocumentDrop(doc:DeskDocument):Bool
@@ -2098,14 +2961,22 @@ class PlayState extends FlxState
 		var bankDoc = Std.downcast(doc, BankDocument);
 		if (bankDoc == null)
 			return false;
-		if (bankDoc.getVariant() == BankDocumentVariant.LoanDecision)
-			return false;
 		if (!shredderStation.canAcceptDocument())
 			return false;
 
 		bringDocumentAboveShredder(bankDoc);
+		var isChefClientDetails = bankDoc.getVariant() == BankDocumentVariant.ClientDetails
+			&& bankDoc.getCitizenForCopy() != null
+			&& CitizenRegistry.indexOf(bankDoc.getCitizenForCopy()) == ChefTutorial.CITIZEN_INDEX;
 		return shredderStation.startShred(bankDoc, function()
 		{
+			if (isChefClientDetails && chefTutorial != null)
+			{
+				if (chefTutorial.tryCompleteLoanPrepShred())
+					chefTutorial.beginLoanGuide();
+				else
+					chefTutorial.notifyDetailsShredded();
+			}
 			removePrintedBankDocument(bankDoc);
 		});
 	}
@@ -2143,8 +3014,9 @@ class PlayState extends FlxState
 	{
 		if (!printerStation.canAcceptDocument())
 			return false;
+		trackChefDetailsPrint();
 		printerStation.setFeedPaperGraphic(BankDocumentLayouts.DOCUMENT_PATH);
-		printerStation.setTerminalPrintJob(TerminalPrintJob.LoanApplicationForm);
+		printerStation.setTerminalPrintJob(monitor.getTerminalPrintJob());
 		monitor.hide();
 		printerStation.animatePaperFeed();
 		return true;
@@ -2165,6 +3037,414 @@ class PlayState extends FlxState
 	{
 		pendingLoanFolderSlide = monitor.consumePendingLoanFolderSlide();
 		pendingAutoPrintLoanForm = monitor.consumePendingAutoPrintLoanForm();
+		handleChefTutorialMonitorClosed();
+		tryScenarioSalaryProgressDialogue();
+	}
+
+	function trackChefDetailsPrint():Void
+	{
+		if (chefTutorial == null)
+			return;
+		if (monitor.getTerminalPrintJob() != TerminalPrintJob.ClientDetails)
+			return;
+		var selected = monitor.getSelectedCitizen();
+		if (selected == null)
+			return;
+		if (CitizenRegistry.indexOf(selected) != ChefTutorial.CITIZEN_INDEX)
+			return;
+		chefTutorial.markDetailsPrinted();
+	}
+
+	function handleChefTutorialMonitorClosed():Void
+	{
+		if (chefTutorial != null)
+			chefTutorial.notifyMonitorClosed();
+		tryChefTutorialProgressDialogue();
+	}
+
+	function buildChefTutorialContext():ChefTutorialContext
+	{
+		if (CitizenRegistry.all.length <= ChefTutorial.CITIZEN_INDEX)
+		{
+			return {
+				salaryUpdated: false,
+				detailsPrinted: chefTutorial != null && chefTutorial.detailsPrinted,
+				paperOnPrinter: hasChefDetailsPaperOnPrinter(),
+				printerBusy: printerStation.isPrintingPaper(),
+				docOnDesk: hasChefClientDetailsOnDesk()
+			};
+		}
+
+		var citizen = CitizenRegistry.all[ChefTutorial.CITIZEN_INDEX];
+		if (chefTutorial != null)
+			chefTutorial.refreshSalaryState(citizen);
+
+		return {
+			salaryUpdated: chefTutorial != null && chefTutorial.salaryUpdated,
+			detailsPrinted: chefTutorial != null && chefTutorial.detailsPrinted,
+			paperOnPrinter: hasChefDetailsPaperOnPrinter(),
+			printerBusy: printerStation.isPrintingPaper(),
+			docOnDesk: hasChefClientDetailsOnDesk()
+		};
+	}
+
+	function hasChefDetailsPaperOnPrinter():Bool
+	{
+		return printerStation.hasPrintedPaperReady()
+			&& printerStation.getTerminalPrintJob() == TerminalPrintJob.ClientDetails;
+	}
+
+	function hasChefClientDetailsOnDesk():Bool
+	{
+		return hasChefClientDetailsOnClientTable() || hasChefClientDetailsOnEmployerDesk();
+	}
+
+	function hasChefClientDetailsOnClientTable():Bool
+	{
+		return hasChefClientDetailsWhere(function(doc) return doc.isOnClientTable());
+	}
+
+	function hasChefClientDetailsOnEmployerDesk():Bool
+	{
+		return hasChefClientDetailsWhere(function(doc) return doc.isOpenOnEmployerTable());
+	}
+
+	function hasChefClientDetailsWhere(where:DeskDocument->Bool):Bool
+	{
+		for (doc in printedBankDocuments)
+		{
+			if (doc.getVariant() != BankDocumentVariant.ClientDetails)
+				continue;
+			var citizen = doc.getCitizenForCopy();
+			if (citizen == null || CitizenRegistry.indexOf(citizen) != ChefTutorial.CITIZEN_INDEX)
+				continue;
+			if (where(doc))
+				return true;
+		}
+		return false;
+	}
+
+	function isDraggingChefClientDetails():Bool
+	{
+		var drag = DeskDocument.currentDrag;
+		if (drag == null)
+			return false;
+		var bankDoc = Std.downcast(drag, BankDocument);
+		if (bankDoc == null)
+			return false;
+		if (bankDoc.getVariant() != BankDocumentVariant.ClientDetails)
+			return false;
+		var citizen = bankDoc.getCitizenForCopy();
+		return citizen != null && CitizenRegistry.indexOf(citizen) == ChefTutorial.CITIZEN_INDEX;
+	}
+
+	function updateChefTutorialProgressTriggers():Void
+	{
+		if (chefTutorial == null || chefTutorial.scanVerified)
+			return;
+
+		var ctx = buildChefTutorialContext();
+		var paperReady = ctx.paperOnPrinter;
+
+		if (paperReady && !chefTutorialPaperWasReady)
+			tryChefTutorialProgressDialogue();
+
+		chefTutorialPaperWasReady = paperReady;
+	}
+
+	function tryChefTutorialProgressDialogue():Void
+	{
+		if (chefTutorial == null || chefTutorial.scanVerified)
+			return;
+		if (CitizenRegistry.all.length <= ChefTutorial.CITIZEN_INDEX)
+			return;
+		if (!clientDialog.canAcceptFollowUp())
+			return;
+
+		var steps = chefTutorial.tryGetProgressDialogue(buildChefTutorialContext());
+		if (steps == null)
+			return;
+
+		clientDialog.startScriptedConversation(steps, true);
+	}
+
+	function getCalculatorNumericValue():Float
+	{
+		var n = parseCalculatorDisplay();
+		return n != null ? n : 0;
+	}
+
+	function placeGuideBookForLoanTutorial():Void
+	{
+		bookDocument.slideOpenToEmployerTableCenter(function()
+		{
+			if (chefTutorial != null)
+				chefTutorial.notifyBookSlideComplete();
+		});
+		if (chefTutorial != null)
+		{
+			bookDocument.setTutorialInteractionLock(
+				chefTutorial.shouldLockLoanBook(),
+				chefTutorial.getLoanBookTocLockIndex()
+			);
+		}
+		moveDocumentToLayer(bookDocument);
+		if (bookDocument.slideAboveTableDocs)
+			bookDocument.bringToFrontInLayer();
+		markDocumentLayersDirty();
+	}
+
+	function clearTutorialUiRestrictions():Void
+	{
+		if (deskTutorialCoach != null)
+			deskTutorialCoach.hide();
+		if (monitorTutorialCoach != null)
+			monitorTutorialCoach.hide();
+		if (bookDocument != null)
+			bookDocument.setTutorialInteractionLock(false);
+		if (monitor != null)
+		{
+			monitor.getScreenUi().tutorialClickFilter = null;
+			monitor.getScreenUi().onTutorialClickBlocked = null;
+			monitor.getScreenUi().setPrintButtonEnabled(true);
+		}
+	}
+
+	function updateChefTutorialGuide(elapsed:Float):Void
+	{
+		if (chefTutorial == null)
+		{
+			clearTutorialUiRestrictions();
+			return;
+		}
+
+		if (chefTutorial.consumePendingMonitorClose())
+			monitor.hide();
+
+		chefTutorial.updateBookSlideDelay(elapsed);
+
+		if (chefTutorial.consumePendingPlaceBook())
+			placeGuideBookForLoanTutorial();
+
+		if (chefTutorial.isLoanGuideActive())
+		{
+			bookDocument.setTutorialInteractionLock(
+				chefTutorial.shouldLockLoanBook(),
+				chefTutorial.getLoanBookTocLockIndex()
+			);
+		}
+
+		if (chefTutorial.isBookTutorialComplete())
+		{
+			clearTutorialUiRestrictions();
+			return;
+		}
+
+		var computerHighlight:TutorialGuideRect = {
+			x: computerScreenImg.x,
+			y: computerScreenImg.y,
+			w: computerScreenImg.width,
+			h: computerScreenImg.height
+		};
+
+		if (chefTutorial.isDeskGuideActive())
+		{
+			chefTutorial.updateDeskGuide(deskTutorialCoach, buildBookTutorialContext());
+			if (monitorTutorialCoach != null)
+				monitorTutorialCoach.hide();
+			monitor.getScreenUi().tutorialClickFilter = null;
+			monitor.getScreenUi().onTutorialClickBlocked = null;
+			return;
+		}
+
+		if (chefTutorial.isLoanGuideActive())
+		{
+			var calculatorHighlight:TutorialGuideRect = {
+				x: calculatorObj.x,
+				y: calculatorObj.y,
+				w: calculatorObj.width,
+				h: calculatorObj.height
+			};
+			chefTutorial.updateLoanGuide(
+				monitor,
+				deskTutorialCoach,
+				monitorTutorialCoach,
+				computerHighlight,
+				calculatorHighlight,
+				getCalculatorNumericValue(),
+				loanFolder != null,
+				buildBookTutorialContext()
+			);
+			var folderCtx = buildLoanFolderTutorialContext();
+			chefTutorial.updateLoanFolderGuide(
+				monitor,
+				deskTutorialCoach,
+				monitorTutorialCoach,
+				monitor.getScreenUi(),
+				folderCtx
+			);
+			var loanFilter = chefTutorial.getLoanTutorialClickFilter(monitor.getScreenUi());
+			monitor.getScreenUi().tutorialClickFilter = loanFilter;
+			monitor.getScreenUi().onTutorialClickBlocked = loanFilter != null
+				? function(px:Float, py:Float)
+				{
+					chefTutorial.showLoanWrongClickCoach(monitorTutorialCoach, monitor, monitor.getScreenUi(), px, py);
+				}
+				: null;
+			return;
+		}
+
+		if (!chefTutorial.isMonitorGuideActive())
+		{
+			deskTutorialCoach.hide();
+			monitorTutorialCoach.hide();
+			monitor.getScreenUi().tutorialClickFilter = null;
+			return;
+		}
+
+		chefTutorial.updateGuide(monitor, deskTutorialCoach, monitorTutorialCoach, computerHighlight);
+
+		if (chefTutorial.shouldFilterMonitorClicks(monitorTutorialCoach))
+		{
+			monitor.getScreenUi().tutorialClickFilter = function(px:Float, py:Float)
+			{
+				return chefTutorial.isMonitorClickAllowed(px, py, monitor.getScreenUi(), monitorTutorialCoach);
+			};
+		}
+		else
+			monitor.getScreenUi().tutorialClickFilter = null;
+	}
+
+	function buildLoanFolderTutorialContext():LoanFolderTutorialContext
+	{
+		var chefId = findIdDocument(Lorian);
+		var chefIdOnTable = chefId != null && chefId.visible && chefId.isOnClientTable();
+		var chefIdDragging = false;
+		var drag = DeskDocument.currentDrag;
+		if (drag != null && chefId != null && drag == chefId)
+			chefIdDragging = true;
+
+		var idCopyOnPrinter = printerStation.hasPrintedPaperReady()
+			&& printerStation.getTerminalPrintJob() == TerminalPrintJob.None;
+		var folderComplete = loanFolder != null
+			&& LoanChecklistItems.isComplete(loanFolder.getStoredDocuments());
+		var folderSpreadOpen = loanFolder != null && loanFolder.isSpreadOpen();
+
+		return {
+			folderVisible: loanFolder != null,
+			folderSpreadOpen: folderSpreadOpen,
+			chefIdOnClientTable: chefIdOnTable,
+			chefIdDragging: chefIdDragging,
+			chefIdOnPrinter: chefId != null && chefId.isLockedForPrinterScan(),
+			printerCanAccept: printerStation.canAcceptDocument(),
+			idCopyOnPrinter: idCopyOnPrinter,
+			hasIdCopy: hasLoanChecklistItemAvailable(IdOrPassportCopy),
+			hasChecklistCopy: hasLoanChecklistItemAvailable(LoanChecklist),
+			hasFormCopy: hasLoanChecklistItemAvailable(LoanApplicationForm),
+			folderComplete: folderComplete,
+			folderApprovalRequested: chefTutorial != null && chefTutorial.folderApprovalRequested,
+			computerHighlight: {
+				x: computerScreenImg.x,
+				y: computerScreenImg.y,
+				w: computerScreenImg.width,
+				h: computerScreenImg.height
+			},
+			printerHighlight: {
+				x: printerStation.getBodyX(),
+				y: printerStation.getBodyY(),
+				w: printerStation.getBodyW(),
+				h: printerStation.getBodyH()
+			},
+			folderArrowHighlight: loanFolder != null ? loanFolder.getArrowWorldBounds() : null,
+			folderStorageHighlight: loanFolder != null ? loanFolder.getStorageWorldBounds() : null
+		};
+	}
+
+	function hasLoanChecklistItemAvailable(item:LoanChecklistItem):Bool
+	{
+		if (loanFolder != null)
+		{
+			for (doc in loanFolder.getStoredDocuments())
+			{
+				if (LoanChecklistItems.matches(doc, item))
+					return true;
+			}
+		}
+
+		for (doc in printedBankDocuments)
+		{
+			if (doc.isStoredInLoanFolder())
+				continue;
+			if (LoanChecklistItems.matches(doc, item))
+				return true;
+		}
+
+		for (paper in printedPapers)
+		{
+			if (paper.isStoredInLoanFolder())
+				continue;
+			if (LoanChecklistItems.matches(paper, item))
+				return true;
+		}
+
+		return false;
+	}
+
+	function buildBookTutorialContext():BookTutorialContext
+	{
+		var scanActive = scanModeOverlay != null && scanModeOverlay.isActive;
+		return {
+			scanActive: scanActive,
+			paperOnPrinter: hasChefDetailsPaperOnPrinter(),
+			docOnDesk: hasChefClientDetailsOnDesk(),
+			printedOnClientTable: hasChefClientDetailsOnClientTable(),
+			printedOnEmployerDesk: hasChefClientDetailsOnEmployerDesk(),
+			draggingPrintedRecord: isDraggingChefClientDetails(),
+			printedHighlight: getChefPrintedRecordHighlight(),
+			clientHighlight: {
+				x: clientImg.x,
+				y: clientImg.y,
+				w: clientImg.width,
+				h: clientImg.height
+			},
+			scanHintHighlight: scanModeOverlay != null ? scanModeOverlay.getHintBounds() : null,
+			questionHighlight: bookDocument.isOnQuestionsSpread()
+				? bookDocument.getTutorialHighlight("first_question")
+				: bookDocument.getTutorialHighlight("questions_area"),
+			hasPrintedSelection: scanModeOverlay != null && scanModeOverlay.hasClientDetailsSelection(),
+			hasBookQuestionSelection: scanModeOverlay != null
+				&& scanModeOverlay.hasSelectionWithTagPrefix(BookScanActions.BOOK_TAG_PREFIX),
+			hasClientSelection: scanModeOverlay != null && scanModeOverlay.hasClientSelection(),
+			actionReady: scanModeOverlay != null && scanModeOverlay.isActionReady(),
+			bookOnEmployerTable: bookDocument.isOpenOnEmployerTable(),
+			bookSlideComplete: bookDocument.isBookSlideComplete,
+			bookSlideAnimating: bookDocument.isBookSlideAnimating,
+			onQuestionsSpread: bookDocument.isOnQuestionsSpread(),
+			bookFrameHighlight: bookDocument.getTutorialHighlight("book_frame"),
+			tocQuestionsHighlight: bookDocument.getTutorialHighlight("toc_questions_to_ask"),
+			shredderHighlight: {
+				x: zones.shredderX,
+				y: zones.shredderY,
+				w: zones.shredderW,
+				h: zones.shredderH
+			}
+		};
+	}
+
+	function getChefPrintedRecordHighlight():Null<TutorialGuideRect>
+	{
+		for (doc in printedBankDocuments)
+		{
+			if (doc.getVariant() != BankDocumentVariant.ClientDetails)
+				continue;
+			var citizen = doc.getCitizenForCopy();
+			if (citizen == null || CitizenRegistry.indexOf(citizen) != ChefTutorial.CITIZEN_INDEX)
+				continue;
+			if (!doc.isOnClientOrEmployerTable())
+				continue;
+			return {x: doc.x, y: doc.y, w: doc.width, h: doc.height};
+		}
+		return null;
 	}
 
 	function refreshLoanChecklistCompletion():Void
@@ -2205,6 +3485,9 @@ class PlayState extends FlxState
 			return false;
 		if (!LoanChecklistItems.isComplete(loanFolder.getStoredDocuments()))
 			return false;
+
+		if (chefTutorial != null)
+			chefTutorial.notifyFolderApprovalRequested();
 
 		pendingLoanFolderSubmit = true;
 		monitor.hide();
@@ -2252,6 +3535,15 @@ class PlayState extends FlxState
 			loanFolder = null;
 
 		loanFolderSubmitting = false;
+
+		if (chefTutorial != null && chefTutorial.shouldStartFolderFarewell())
+		{
+			chefTutorial.onFolderTutorialSubmitComplete();
+			if (clientDialog.canAcceptFollowUp())
+				clientDialog.startScriptedConversation(ClientScenarios.chefTutorialFolderCompletionSteps(), true);
+			return;
+		}
+
 		handleLoanReviewAfterSubmit();
 	}
 
@@ -2275,6 +3567,16 @@ class PlayState extends FlxState
 		if (CitizenRegistry.all.length == 0 || currentScenario == null)
 			return;
 
+		if (currentScenario.identityFraud)
+		{
+			var loanId = monitor.getLoanId();
+			if (fraudConfronted)
+				clientDialog.startFollowUpDialog(["Forget the loan — just give me my documents back."]);
+			else
+				clientDialog.startFollowUpDialog(["Can we skip the paperwork? I'm in a hurry..."]);
+			return;
+		}
+
 		var citizenIdx = currentScenario.citizenIndex;
 		if (citizenIdx < 0 || citizenIdx >= CitizenRegistry.all.length)
 			return;
@@ -2289,6 +3591,8 @@ class PlayState extends FlxState
 		if (review.approved)
 		{
 			pendingClientAdvance = true;
+			if (currentScenario != null && currentScenario.requiresDocumentReturn)
+				pendingDocumentReturn = true;
 			clientDialog.startThanksDialog();
 		}
 	}
@@ -2306,49 +3610,23 @@ class PlayState extends FlxState
 		doc.onDroppedOnPrinter = handleNonPrintableDocumentDrop;
 		doc.onDroppedOnShredder = handleBankDocumentDroppedOnShredder;
 
-		var centerX = zones.employerX + zones.employerW * 0.5;
-		var centerY = zones.employerTableY + zones.employerTableH * 0.45;
-		doc.setPosition(centerX - doc.width * 0.5, centerY - doc.height * 0.5);
 		documentsAbove.add(doc);
 		printedBankDocuments.push(doc);
 		moveDocumentToLayer(doc);
-	}
-
-	function advanceToNextClient():Void
-	{
-		pendingClientAdvance = false;
-		pendingLoanReview = null;
-		monitor.resetScreen();
-
-		passport.visible = false;
-		if (documentsAbove.members.indexOf(passport) >= 0)
-			documentsAbove.remove(passport, true);
-		for (idDoc in idDocuments)
-			stashDocumentOffDesk(idDoc);
-		removeLoanFolder();
-		clearAllPrintedBankDocuments();
-
-		currentClientIndex++;
-		if (currentClientIndex >= ClientScenarios.count())
-			currentClientIndex = ClientScenarios.count() - 1;
-
-		applyClientScenario();
-		clientDialog.resetForNewDay();
-		clientDialog.setScenario(currentScenario);
-
-		clientImg.x = -clientImg.width;
-		clientImg.y = clientFinalY;
-		clientImg.color = FlxColor.BLACK;
-		clientAnimPhase = 1;
-		clientAnimTimer = 0;
-		clientBobOffset = 0;
+		doc.slideOpenFromRightToEmployerCenter();
 	}
 
 	function configurePrintedBankDocument(doc:BankDocument, variant:BankDocumentVariant):Void
 	{
 		var loanId = monitor.getLoanId();
 		var idText = loanId != null ? loanId : "";
-		if (CitizenRegistry.all.length > 0)
+		if (variant == BankDocumentVariant.ClientDetails)
+		{
+			var selected = monitor.getSelectedCitizen();
+			if (selected != null)
+				doc.setCitizen(selected);
+		}
+		else if (CitizenRegistry.all.length > 0)
 		{
 			var citizenIdx = currentScenario != null ? currentScenario.citizenIndex : 0;
 			if (citizenIdx >= 0 && citizenIdx < CitizenRegistry.all.length)
@@ -2365,6 +3643,10 @@ class PlayState extends FlxState
 				doc.refreshCompletion(completed);
 			case BankDocumentVariant.ApplicationForm:
 				doc.setApplicationData(idText, monitor.getLoanApplicationData());
+			case BankDocumentVariant.ClientDetails:
+				var selected = monitor.getSelectedCitizen();
+				if (selected != null)
+					doc.setClientDetailsData(selected);
 			case BankDocumentVariant.LoanDecision:
 		}
 	}
@@ -2453,6 +3735,28 @@ class PlayState extends FlxState
 		documentsAbove.add(loanFolder);
 		loanFolder.onStoredDocumentsChanged = refreshLoanChecklistCompletion;
 		loanFolder.tweenSlideInFromEdge(0.55);
+		tryChefTutorialFolderIntroDialogue();
+	}
+
+	function tryChefTutorialFolderIntroDialogue():Void
+	{
+		if (chefTutorial == null || !chefTutorial.shouldTryFolderIntroDialog())
+			return;
+		if (!clientDialog.canAcceptFollowUp())
+			return;
+
+		chefTutorial.consumeFolderIntroDialog();
+		clientDialog.startScriptedConversation(ClientScenarios.chefTutorialFolderIntroSteps(), true);
+	}
+
+	function deliverChefTutorialIdHandoff():Void
+	{
+		if (chefTutorial == null || !chefTutorial.needsChefIdHandoff())
+			return;
+
+		spawnClientIdDocument(Lorian, true);
+		registerClientHandout(findIdDocument(Lorian));
+		chefTutorial.markChefIdHandedOff();
 	}
 
 	function removeLoanFolder():Void
@@ -2483,6 +3787,8 @@ class PlayState extends FlxState
 				spawnPrintedBankDocument(BankDocumentVariant.LoanChecklist, centerX, centerY, p.x, p.y);
 			case TerminalPrintJob.LoanApplicationForm:
 				spawnPrintedBankDocument(BankDocumentVariant.ApplicationForm, centerX, centerY, p.x, p.y);
+			case TerminalPrintJob.ClientDetails:
+				spawnPrintedBankDocument(BankDocumentVariant.ClientDetails, centerX, centerY, p.x, p.y);
 			default:
 				spawnPrintedPaper(centerX, centerY, p.x, p.y);
 		}
@@ -2509,25 +3815,15 @@ class PlayState extends FlxState
 			paper.beginPickupDrag(dragMouseX, dragMouseY);
 	}
 
-	function spawnPassport():Void
+	function hidePassportOnDesk():Void
 	{
-		passport.prepareClientHandoff();
-		var lensCam = magnifyingGlass != null ? magnifyingGlass.lensCam : null;
-		passport.cameras = [FlxG.camera];
-		if (lensCam != null)
-			passport.cameras.push(lensCam);
-
+		passport.visible = false;
 		if (documentsAbove.members.indexOf(passport) >= 0)
 			documentsAbove.remove(passport, true);
-		documentsAbove.add(passport);
+	}
 
-		var targetX = (zones.leftW - passport.width) * 0.5;
-		var targetY = zones.clientTableY + (zones.clientTableH - passport.height) * 0.5;
-
-		passport.setPosition(targetX, zones.clientTableY - passport.height);
-		passport.angle = -20;
-
-		FlxTween.tween(passport, {y: targetY, angle: -14.0}, 0.5, {ease: FlxEase.bounceOut});
+	function spawnPassport():Void
+	{
 	}
 
 	function isComputerZoneClick():Bool
@@ -2549,6 +3845,9 @@ class PlayState extends FlxState
 	{
 		if (scanModeOverlay == null || !scanModeOverlay.isActive)
 			return true;
+
+		if (chefTutorial != null && (chefTutorial.isBookGuideActive() || chefTutorial.isDeskGuideActive()))
+			return chefTutorial.isScanPointAllowed(p.x, p.y, deskTutorialCoach, scanModeOverlay);
 
 		if (scanModeOverlay.isPointOnActionableMessage(p))
 			return true;
@@ -2591,14 +3890,17 @@ class PlayState extends FlxState
 		scanModeOverlay.syncScreenSize();
 		scanModeOverlay.setClientArea(zones.leftW, zones.clientH);
 
-		if (beginningDayOverlay.isShowing || mainMenuOverlay.isShowing || monitor.isActive() || clientAnimPhase != 0)
+		if (beginningDayOverlay.isShowing || mainMenuOverlay.isShowing || monitor.isActive() || isClientEntranceBlocking()
+			|| shiftPauseOverlay.isActive())
 		{
 			scanModeOverlay.setActive(false);
+			scanModeOverlay.setHintVisible(false);
 			scanClickPending = false;
 			return;
 		}
 
 		var showHint = clientDialog.shouldShowScanHint();
+		scanModeOverlay.setHintVisible(false);
 		if (scanModeOverlay.isActive && !showHint)
 			scanModeOverlay.setActive(false);
 
@@ -2647,7 +3949,7 @@ class PlayState extends FlxState
 		}
 
 		if (MonitorOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput() || MainMenuOverlay.blocksWorldInput()
-			|| ShiftPauseOverlay.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
+			|| ShiftPauseOverlay.blocksWorldInput() || EndOfDemoPopup.blocksWorldInput() || ScreenFadeOverlay.blocksWorldInput())
 			return;
 
 		if (clientDialog.isPointOnChoiceControls(p))
@@ -2815,6 +4117,8 @@ class PlayState extends FlxState
 
 	function canStartDocumentDrag(candidate:DeskDocument, p:flixel.math.FlxPoint):Bool
 	{
+		if (chefTutorial != null && chefTutorial.blocksAnyDeskDrag())
+			return false;
 		if (candidate != magnifyingGlass && magnifierHitsPoint(p))
 			return false;
 		if (isPointOnCalculator(p))

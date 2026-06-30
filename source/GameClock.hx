@@ -4,7 +4,7 @@ class GameClock
 {
 	public static inline var START_HOUR = 8;
 	public static inline var END_HOUR = 16;
-	public static inline var DAY_DURATION_SECONDS = 1800.0;
+	public static inline var DAY_DURATION_SECONDS = 3600.0;
 	public static inline var HUD_MINUTE_STEP = 10;
 
 	public static var elapsedSeconds(default, null) = 0.0;

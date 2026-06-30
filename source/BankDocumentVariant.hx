@@ -5,4 +5,5 @@ enum BankDocumentVariant
 	ApplicationForm;
 	LoanChecklist;
 	LoanDecision;
+	ClientDetails;
 }

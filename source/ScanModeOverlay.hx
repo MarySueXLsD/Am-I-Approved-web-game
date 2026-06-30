@@ -7,6 +7,7 @@ import flixel.math.FlxPoint;
 import flixel.text.FlxText;
 import flixel.util.FlxColor;
 import openfl.display.BitmapData;
+import StringTools;
 
 private class ScanSelectionItem
 {
@@ -106,6 +107,7 @@ class ScanModeOverlay extends FlxGroup
 
 	public var isActive(default, null) = false;
 	public var onActionConfirm:Null<String->Void>;
+	public var getCitizenDisplayName:Void->String;
 	public static var isPointAllowed:FlxPoint->Bool;
 
 	public static function blocksDocumentInteraction(doc:DeskDocument, point:FlxPoint):Bool
@@ -455,7 +457,11 @@ class ScanModeOverlay extends FlxGroup
 		if (selections.length < MAX_SELECTIONS)
 			return;
 
-		activeAction = BookScanActions.resolve(selections[0].sourceTag, selections[1].sourceTag);
+		activeAction = BookScanActions.resolve(
+			selections[0].sourceTag,
+			selections[1].sourceTag,
+			getCitizenDisplayName != null ? getCitizenDisplayName() : null
+		);
 		messageActionable = activeAction != null;
 		messageHovered = false;
 
@@ -536,6 +542,48 @@ class ScanModeOverlay extends FlxGroup
 	public function isPointOnActionableMessage(point:FlxPoint):Bool
 	{
 		return messageActionable && dualPresentationVisible && messageBg.visible && messageBg.overlapsPoint(point);
+	}
+
+	public function getHintBounds():Null<TutorialGuideRect>
+	{
+		if (!hintHitbox.visible)
+			return null;
+		return {x: hintHitbox.x, y: hintHitbox.y, w: hintHitbox.width, h: hintHitbox.height};
+	}
+
+	public function hasSelectionWithTagPrefix(prefix:String):Bool
+	{
+		for (item in selections)
+		{
+			if (item.sourceTag != null && StringTools.startsWith(item.sourceTag, prefix))
+				return true;
+		}
+		return false;
+	}
+
+	public function hasClientSelection():Bool
+	{
+		for (item in selections)
+		{
+			if (item.sourceTag == BookScanActions.CLIENT_TAG)
+				return true;
+		}
+		return false;
+	}
+
+	public function hasClientDetailsSelection():Bool
+	{
+		for (item in selections)
+		{
+			if (item.sourceTag == BookScanActions.CLIENT_DETAILS_TAG)
+				return true;
+		}
+		return false;
+	}
+
+	public function isActionReady():Bool
+	{
+		return messageActionable && activeAction != null;
 	}
 
 	public function handleActionClick(point:FlxPoint):Bool

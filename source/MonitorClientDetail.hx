@@ -55,6 +55,10 @@ class MonitorClientDetail extends FlxGroup
 	var panelDirty = true;
 	var scrollDirty = true;
 	var keyHandler:KeyboardEvent->Void;
+	var keyListenerAttached = false;
+	public var validateFieldEdit:Null<(citizen:Citizen, path:String, value:String) -> Null<String>>;
+	public var onFieldValidationFailed:Null<(path:String, message:String) -> Bool>;
+	public var shouldRevertOnCoachValidation:Null<String->Bool> = null;
 
 	var ddBg:FlxSprite;
 	var ddTxt:Array<FlxText>;
@@ -442,17 +446,13 @@ class MonitorClientDetail extends FlxGroup
 	function attachKeyListener():Void
 	{
 		var stage = Lib.current.stage;
-		if (stage == null)
-			return;
-		stage.addEventListener(KeyboardEvent.KEY_DOWN, keyHandler, false, 0, true);
+		keyListenerAttached = MonitorKeyboard.attach(stage, keyHandler, keyListenerAttached);
 	}
 
 	function detachKeyListener():Void
 	{
 		var stage = Lib.current.stage;
-		if (stage == null)
-			return;
-		stage.removeEventListener(KeyboardEvent.KEY_DOWN, keyHandler);
+		keyListenerAttached = MonitorKeyboard.detach(stage, keyHandler, keyListenerAttached);
 	}
 
 	function onKeyDown(e:KeyboardEvent):Void
@@ -495,12 +495,16 @@ class MonitorClientDetail extends FlxGroup
 			if (draft.length > 0)
 				row.setDraft(draft.substr(0, draft.length - 1));
 		}
-		else if (e.charCode > 32)
+		else
 		{
-			var ch = String.fromCharCode(e.charCode);
+			var ch = MonitorKeyboard.typedCharacter(e);
+			if (ch == null)
+				return;
+
+			var code = ch.charCodeAt(0);
 			if (row.digitsOnly)
 			{
-				if (!MonitorDetailFieldRow.acceptsNumericChar(e.charCode, row.getDraft(), row.allowDecimal))
+				if (!MonitorDetailFieldRow.acceptsNumericChar(code, row.getDraft(), row.allowDecimal))
 				{
 					e.stopImmediatePropagation();
 					return;
@@ -508,7 +512,6 @@ class MonitorClientDetail extends FlxGroup
 			}
 			else if (row.dateField)
 			{
-				var code = e.charCode;
 				var isDigit = code >= 48 && code <= 57;
 				var isHyphen = code == 45;
 				if (!isDigit && !isHyphen)
@@ -522,7 +525,7 @@ class MonitorClientDetail extends FlxGroup
 					return;
 				}
 			}
-			var newDraft = row.getDraft() + Std.string(ch);
+			var newDraft = row.getDraft() + ch;
 			if (!row.textFits(newDraft))
 			{
 				e.stopImmediatePropagation();
@@ -530,11 +533,29 @@ class MonitorClientDetail extends FlxGroup
 			}
 			row.setDraft(newDraft);
 		}
-		else
-			return;
 
 		e.stopImmediatePropagation();
 		refreshRowPositions();
+	}
+
+	function blockInvalidFieldEdit(path:String, newVal:String, onCoachBlocked:Void->Void,
+			onWarningDismiss:Void->Void):Bool
+	{
+		if (validateFieldEdit == null)
+			return false;
+
+		var validationError = validateFieldEdit(citizen, path, newVal);
+		if (validationError == null)
+			return false;
+
+		if (onFieldValidationFailed != null && onFieldValidationFailed(path, validationError))
+		{
+			onCoachBlocked();
+			return true;
+		}
+
+		confirmDialog.showWarning(areaX, areaY, areaW, areaH, validationError, onWarningDismiss);
+		return true;
 	}
 
 	function submitFieldEdit(row:MonitorDetailFieldRow):Void
@@ -605,6 +626,28 @@ class MonitorClientDetail extends FlxGroup
 				blurField();
 				refreshRowPositions();
 			});
+			return;
+		}
+
+		if (blockInvalidFieldEdit(row.path, newVal,
+			function()
+			{
+				var revert = shouldRevertOnCoachValidation == null || shouldRevertOnCoachValidation(row.path);
+				if (revert)
+				{
+					row.revertDraft();
+					blurField();
+					refreshRowPositions();
+				}
+			},
+			function()
+			{
+				row.revertDraft();
+				blurField();
+				refreshRowPositions();
+			}))
+		{
+			detachKeyListener();
 			return;
 		}
 
@@ -1006,6 +1049,9 @@ class MonitorClientDetail extends FlxGroup
 		if (storeNew == ddCurrentValue)
 			return;
 
+		if (blockInvalidFieldEdit(path, storeNew, function() {}, function() {}))
+			return;
+
 		var label = CitizenRegistry.fieldLabel(entries, path);
 		confirmDialog.show(areaX, areaY, areaW, areaH, label, displayOld, displayNew, function()
 		{
@@ -1083,5 +1129,42 @@ class MonitorClientDetail extends FlxGroup
 				refreshRowPositions();
 			}
 		}
+	}
+
+	public function ensureFieldVisible(path:String):Void
+	{
+		for (i in 0...entries.length)
+		{
+			var matches = switch (entries[i])
+			{
+				case Single(field): field.path == path;
+				case Pair(left, right): left.path == path || right.path == path;
+			};
+			if (!matches)
+				continue;
+
+			var maxScroll = Std.int(Math.max(0, entries.length - visibleCount));
+			scrollIndex = i > maxScroll ? maxScroll : i;
+			clampScroll();
+			panelDirty = true;
+			scrollDirty = true;
+			refresh();
+			return;
+		}
+	}
+
+	public function getFieldBounds(path:String):Null<TutorialGuideRect>
+	{
+		var end = Std.int(Math.min(entries.length, scrollIndex + visibleCount));
+		for (i in scrollIndex...end)
+		{
+			var slot = i - scrollIndex;
+			if (slot < 0 || slot >= entryRows.length)
+				continue;
+			var field = entryRows[slot].getFieldRow(path);
+			if (field != null && field.visible)
+				return {x: field.hit.x, y: field.hit.y, w: field.hit.width, h: field.hit.height};
+		}
+		return null;
 	}
 }

@@ -28,9 +28,11 @@ class IdDocument extends DeskDocument
 	var fieldValues:Array<FlxText>;
 	var nationalityValue:Null<FlxText>;
 	var citizen:Citizen;
+	var portraitPathOverride:Null<String>;
 	var textShown = false;
 	var variant:IdCardVariant;
 	var layout:IdCardLayout;
+	var lastTextOverlayLayoutKey = -1.0;
 
 	public function new(zones:LayoutZones, layer:FlxGroup, variant:IdCardVariant)
 	{
@@ -97,17 +99,19 @@ class IdDocument extends DeskDocument
 				return partBounds;
 		}
 
-		return {
-			x: x,
-			y: y,
-			w: width,
-			h: height
-		};
+		return getDocumentScanBounds();
 	}
 
 	public function getCitizenForCopy():Citizen
 	{
 		return citizen;
+	}
+
+	public function getPortraitPathForCopy():Null<String>
+	{
+		if (citizen == null)
+			return null;
+		return portraitPathOverride != null ? portraitPathOverride : ClientPortraits.pathForCitizen(citizen);
 	}
 
 	public function hasCopyEmblem():Bool
@@ -238,9 +242,10 @@ class IdDocument extends DeskDocument
 		photo.setPosition(docX + layout.photoX * sx, docY + layout.photoY * sy);
 	}
 
-	public function setCitizen(c:Citizen):Void
+	public function setCitizen(c:Citizen, ?portraitPath:Null<String> = null):Void
 	{
 		citizen = c;
+		portraitPathOverride = portraitPath;
 		rebuildPhotoGraphic();
 		if (c == null)
 		{
@@ -270,8 +275,9 @@ class IdDocument extends DeskDocument
 			return;
 
 		var backdrop = ClientPhotoCompositor.samplePhotoBackdrop(layout.closeupPath, layout.photoX, layout.photoY);
+		var portraitPath = portraitPathOverride != null ? portraitPathOverride : ClientPortraits.pathForCitizen(citizen);
 		photoGraphic = ClientPhotoCompositor.buildGrayPortrait(Std.int(layout.photoW), Std.int(layout.photoH),
-			ClientPortraits.pathForCitizen(citizen), backdrop);
+			portraitPath, backdrop);
 		photoSprite.loadGraphic(photoGraphic, false);
 		photoSprite.updateHitbox();
 	}
@@ -405,12 +411,18 @@ class IdDocument extends DeskDocument
 
 		if (!shouldShow)
 		{
+			lastTextOverlayLayoutKey = -1.0;
 			for (text in overlayTexts())
 				text.clipRect = null;
 			photoSprite.clipRect = null;
 			emblemSprite.clipRect = null;
 			return;
 		}
+
+		var layoutKey = x + y * 10000 + width * 100 + height;
+		if (layoutKey == lastTextOverlayLayoutKey)
+			return;
+		lastTextOverlayLayoutKey = layoutKey;
 
 		ensureOverlaysOnTop();
 
@@ -520,7 +532,10 @@ class IdDocument extends DeskDocument
 		{
 			var photoBounds = overlaySpriteScanBounds(photoSprite);
 			if (pointInScanBounds(point, photoBounds))
+			{
+				photoBounds.tag = BookScanActions.ID_PHOTO_TAG;
 				return photoBounds;
+			}
 		}
 
 		return null;
@@ -532,17 +547,35 @@ class IdDocument extends DeskDocument
 		if (!value.visible)
 			return null;
 
+		var tag = layout.fields[index].kind == Name ? BookScanActions.DOCUMENT_NAME_TAG : null;
+
 		if (layout.showFieldTitles)
 		{
 			var label = fieldLabels[index];
 			if (label.visible)
-				return unionScanBounds(textScanBounds(label), textScanBounds(value));
+				return taggedUnionScanBounds(textScanBounds(label, tag), textScanBounds(value, tag));
 		}
 
-		return textScanBounds(value);
+		return textScanBounds(value, tag);
 	}
 
-	function textScanBounds(text:FlxText):ScanBounds
+	function taggedUnionScanBounds(a:ScanBounds, b:ScanBounds):ScanBounds
+	{
+		var left = Math.min(a.x, b.x);
+		var top = Math.min(a.y, b.y);
+		var right = Math.max(a.x + a.w, b.x + b.w);
+		var bottom = Math.max(a.y + a.h, b.y + b.h);
+		return {
+			x: left,
+			y: top,
+			w: right - left,
+			h: bottom - top,
+			pad: a.pad != null ? a.pad : b.pad,
+			tag: a.tag != null ? a.tag : b.tag
+		};
+	}
+
+	function textScanBounds(text:FlxText, ?tag:Null<String>):ScanBounds
 	{
 		var glyphW = text.textField.textWidth;
 		var glyphH = text.textField.textHeight;
@@ -551,7 +584,8 @@ class IdDocument extends DeskDocument
 			y: text.y,
 			w: glyphW > 0 ? glyphW : text.width,
 			h: glyphH > 0 ? glyphH : text.height,
-			pad: FIELD_SCAN_PAD
+			pad: FIELD_SCAN_PAD,
+			tag: tag
 		};
 	}
 
@@ -625,8 +659,26 @@ class IdDocument extends DeskDocument
 		if (cams == null)
 			cams = [flixel.FlxG.camera];
 		for (text in overlayTexts())
+		{
+			if (sameCameras(text.cameras, cams))
+				continue;
 			text.cameras = cams.copy();
-		photoSprite.cameras = cams.copy();
-		emblemSprite.cameras = cams.copy();
+		}
+		if (!sameCameras(photoSprite.cameras, cams))
+			photoSprite.cameras = cams.copy();
+		if (!sameCameras(emblemSprite.cameras, cams))
+			emblemSprite.cameras = cams.copy();
+	}
+
+	function sameCameras(a:Array<flixel.FlxCamera>, b:Array<flixel.FlxCamera>):Bool
+	{
+		if (a == null || b == null)
+			return a == b;
+		if (a.length != b.length)
+			return false;
+		for (i in 0...a.length)
+			if (a[i] != b[i])
+				return false;
+		return true;
 	}
 }

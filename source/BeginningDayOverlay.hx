@@ -14,7 +14,7 @@ class BeginningDayOverlay extends FlxGroup
 {
 	static inline var FADE_DURATION = 0.9;
 	static inline var SLIDE_DURATION = 0.75;
-	static inline var START_BTN_DELAY = 1.0;
+	static inline var START_BTN_DELAY = 3.0;
 	static inline var START_BTN_REVEAL_DURATION = 0.55;
 	static inline var START_BTN_PULSE_DURATION = 1.1;
 	static inline var TWEEN_PINGPONG = 4;
@@ -28,6 +28,9 @@ class BeginningDayOverlay extends FlxGroup
 	static inline var NEWSPAPER_MARGIN = -290.0;
 	static inline var NEWSPAPER_LIFT = 520.0;
 	static inline var NEWSPAPER_TILT = -10.0;
+	static inline var COFFEE_SIP = "static/Audio/Ambient/sipping-coffee.wav";
+	static inline var COFFEE_SIP_INTERVAL = 5.0;
+	static inline var COFFEE_SIP_START_DELAY = 2.0;
 
 	static var instance:BeginningDayOverlay;
 
@@ -46,12 +49,26 @@ class BeginningDayOverlay extends FlxGroup
 	var newspaperTargetY = 0.0;
 	var onGameStart:Void->Void;
 	var onFinished:Void->Void;
+	public var onStartDayPressed:Void->Void;
+	var coffeeSipTimer = 0.0;
+	var coffeeSipLoopEnabled = false;
+	var coffeeSipStarted = false;
 
 	public var isShowing(default, null) = false;
 
 	public static function blocksWorldInput():Bool
 	{
 		return instance != null && instance.isShowing;
+	}
+
+	public function isRevealingGame():Bool
+	{
+		return isShowing && phase == 8;
+	}
+
+	public static function isGameRevealInProgress():Bool
+	{
+		return instance != null && instance.isRevealingGame();
 	}
 
 	public function new()
@@ -92,16 +109,21 @@ class BeginningDayOverlay extends FlxGroup
 			return;
 
 		cancelTween();
+		FlxTween.cancelTweensOf(blackScreen);
+		FlxTween.cancelTweensOf(newspaper);
 		onGameStart = gameStart;
 		onFinished = finished;
 		isShowing = true;
 		visible = true;
-		phase = 1;
+		phase = 0;
 		waitTimer = 0;
+		coffeeSipTimer = 0;
+		startCoffeeSipLoop();
 
 		resetVisualState();
 		layoutFullscreen();
 		layoutStartButton();
+		resetNewspaperStartPosition();
 
 		tableBg.visible = true;
 		tableBg.alpha = 1;
@@ -116,14 +138,6 @@ class BeginningDayOverlay extends FlxGroup
 		bringBlackToFront();
 		blackScreen.visible = true;
 		blackScreen.alpha = 1;
-
-		activeTween = FlxTween.tween(blackScreen, {alpha: 0}, FADE_DURATION, {
-			ease: FlxEase.sineInOut,
-			onComplete: function(_)
-			{
-				onIntroFadeComplete();
-			}
-		});
 	}
 
 	public function hide():Void
@@ -133,6 +147,7 @@ class BeginningDayOverlay extends FlxGroup
 
 		cancelTween();
 		cancelStartButtonPulse();
+		stopCoffeeSips();
 		FlxTween.cancelTweensOf(blackScreen);
 		FlxTween.cancelTweensOf(tableBg);
 		FlxTween.cancelTweensOf(newspaper);
@@ -141,6 +156,7 @@ class BeginningDayOverlay extends FlxGroup
 		phase = 0;
 		onGameStart = null;
 		onFinished = null;
+		onStartDayPressed = null;
 		resetVisualState();
 	}
 
@@ -154,7 +170,7 @@ class BeginningDayOverlay extends FlxGroup
 		coffeeSmoke.resetEffect();
 		glassesGlint.visible = false;
 		glassesGlint.resetEffect();
-		newspaper.visible = true;
+		newspaper.visible = false;
 		newspaper.alpha = 1;
 		startLabel.visible = false;
 		startLabel.alpha = 1;
@@ -176,6 +192,21 @@ class BeginningDayOverlay extends FlxGroup
 	{
 		remove(dayTitleLabel, false);
 		add(dayTitleLabel);
+	}
+
+	function startIntroFade():Void
+	{
+		bringBlackToFront();
+		blackScreen.visible = true;
+		blackScreen.alpha = 1;
+
+		activeTween = FlxTween.tween(blackScreen, {alpha: 0}, FADE_DURATION, {
+			ease: FlxEase.sineInOut,
+			onComplete: function(_)
+			{
+				onIntroFadeComplete();
+			}
+		});
 	}
 
 	function onIntroFadeComplete():Void
@@ -206,8 +237,12 @@ class BeginningDayOverlay extends FlxGroup
 	{
 		cancelTween();
 		cancelStartButtonPulse();
+		stopCoffeeSipLoop();
 		phase = 5;
 		waitTimer = 0;
+
+		if (onStartDayPressed != null)
+			onStartDayPressed();
 
 		startLabel.visible = false;
 		dayTitleLabel.visible = false;
@@ -473,6 +508,15 @@ class BeginningDayOverlay extends FlxGroup
 		if (!isShowing)
 			return;
 
+		updateCoffeeSips(elapsed);
+
+		if (phase == 0)
+		{
+			phase = 1;
+			startIntroFade();
+			return;
+		}
+
 		if (phase == 3)
 		{
 			waitTimer += elapsed;
@@ -507,6 +551,55 @@ class BeginningDayOverlay extends FlxGroup
 			activeTween.cancel();
 			activeTween = null;
 		}
+	}
+
+	function updateCoffeeSips(elapsed:Float):Void
+	{
+		if (!coffeeSipLoopEnabled)
+			return;
+
+		coffeeSipTimer += elapsed;
+
+		if (!coffeeSipStarted)
+		{
+			if (coffeeSipTimer >= COFFEE_SIP_START_DELAY)
+			{
+				coffeeSipStarted = true;
+				coffeeSipTimer = 0;
+				playCoffeeSip();
+			}
+			return;
+		}
+
+		if (coffeeSipTimer >= COFFEE_SIP_INTERVAL)
+		{
+			coffeeSipTimer -= COFFEE_SIP_INTERVAL;
+			playCoffeeSip();
+		}
+	}
+
+	function playCoffeeSip():Void
+	{
+		FlxG.sound.play(COFFEE_SIP, GameSettings.sfxVolume);
+	}
+
+	function stopCoffeeSipLoop():Void
+	{
+		coffeeSipLoopEnabled = false;
+	}
+
+	function stopCoffeeSips():Void
+	{
+		stopCoffeeSipLoop();
+		coffeeSipTimer = 0;
+		coffeeSipStarted = false;
+	}
+
+	function startCoffeeSipLoop():Void
+	{
+		coffeeSipLoopEnabled = true;
+		coffeeSipStarted = false;
+		coffeeSipTimer = 0;
 	}
 
 }

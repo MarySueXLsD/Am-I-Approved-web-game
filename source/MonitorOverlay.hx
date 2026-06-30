@@ -32,6 +32,7 @@ class MonitorOverlay extends FlxGroup
 	var backdrop:FlxSprite;
 	var monitor:FlxSprite;
 	var screenUi:MonitorScreenUi;
+	var tutorialCoach:Null<TutorialGuideOverlay>;
 	var crtOverlay:FlxSprite;
 	var animOverlay:FlxSprite;
 	var animBmp:BitmapData;
@@ -47,6 +48,7 @@ class MonitorOverlay extends FlxGroup
 	var lastCrtH:Int = 0;
 	public var onMonitorClosed:Void->Void;
 	public var onMonitorSlideOutComplete:Void->Void;
+	public var onMonitorSlideInComplete:Void->Void;
 
 	var scanLineT:Float = -1.0;
 	var scanLineCooldown:Float = 3.0;
@@ -168,6 +170,16 @@ class MonitorOverlay extends FlxGroup
 		screenUi.onConversationLogRequest = cb;
 	}
 
+	public function setValidateFieldEdit(cb:Null<(citizen:Citizen, path:String, value:String) -> Null<String>>):Void
+	{
+		screenUi.setValidateFieldEdit(cb);
+	}
+
+	public function setOnFieldValidationFailed(cb:Null<(path:String, message:String) -> Bool>):Void
+	{
+		screenUi.setOnFieldValidationFailed(cb);
+	}
+
 	public function resetScreen():Void
 	{
 		screenUi.reset();
@@ -191,6 +203,63 @@ class MonitorOverlay extends FlxGroup
 	public function getLoanApplicationData():Null<LoanApplicationData>
 	{
 		return screenUi.getLoanApplicationData();
+	}
+
+	public function getTerminalPrintJob():TerminalPrintJob
+	{
+		return screenUi.getTerminalPrintJob();
+	}
+
+	public function getSelectedCitizen():Null<Citizen>
+	{
+		return screenUi.getSelectedCitizen();
+	}
+
+	public function getScreenUi():MonitorScreenUi
+	{
+		return screenUi;
+	}
+
+	public function setTutorialCoach(coach:TutorialGuideOverlay):Void
+	{
+		if (tutorialCoach == coach)
+			return;
+
+		if (tutorialCoach != null)
+			remove(tutorialCoach, false);
+
+		tutorialCoach = coach;
+		if (tutorialCoach != null)
+			add(tutorialCoach);
+	}
+
+	public function getTutorialCoach():Null<TutorialGuideOverlay>
+	{
+		return tutorialCoach;
+	}
+
+	public function getMonitorFrameBounds():{x:Float, y:Float, w:Float, h:Float}
+	{
+		var sx = monitor.scale.x;
+		var sy = monitor.scale.y;
+		return {
+			x: monitor.x,
+			y: monitor.y,
+			w: monitor.width * sx,
+			h: monitor.height * sy
+		};
+	}
+
+	public function getInnerScreenBounds():{x:Float, y:Float, w:Float, h:Float}
+	{
+		var sx = monitor.scale.x;
+		var sy = monitor.scale.y;
+		return {
+			x: monitor.x + INNER_X * sx,
+			y: monitor.y + INNER_Y * sy,
+			w: INNER_W * sx,
+			h: INNER_H * sy
+		};
 	}
 
 	public function show():Void
@@ -228,6 +297,8 @@ class MonitorOverlay extends FlxGroup
 			return;
 
 		screenUi.suspendInput();
+		if (tutorialCoach != null)
+			tutorialCoach.hide();
 		isAnimating = true;
 		notifyMonitorClosed();
 
@@ -378,6 +449,8 @@ class MonitorOverlay extends FlxGroup
 			{
 				isAnimating = false;
 				slideTween = null;
+				if (onMonitorSlideInComplete != null)
+					onMonitorSlideInComplete();
 			}
 		});
 	}

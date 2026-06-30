@@ -24,7 +24,9 @@ class BankDocument extends DeskDocument
 	var variant:BankDocumentVariant;
 	var currentLoanId = "";
 	var completedChecklistItems:Array<LoanChecklistItem> = [];
+	var loanDecisionApproved = false;
 	var textLayoutDirty = false;
+	var lastTextOverlayLayoutKey = -1.0;
 
 	public function new(zones:LayoutZones, layer:FlxGroup, ?documentVariant:BankDocumentVariant)
 	{
@@ -73,6 +75,15 @@ class BankDocument extends DeskDocument
 		refreshChecklistLayout();
 	}
 
+	public function setClientDetailsData(c:Citizen):Void
+	{
+		if (variant != BankDocumentVariant.ClientDetails)
+			return;
+
+		layout = BankDocumentLayouts.clientDetails(c);
+		invalidateTextOverlays();
+	}
+
 	public function setApplicationData(loanId:String, data:LoanApplicationData):Void
 	{
 		if (variant != BankDocumentVariant.ApplicationForm)
@@ -87,6 +98,7 @@ class BankDocument extends DeskDocument
 		if (variant != BankDocumentVariant.LoanDecision)
 			return;
 
+		loanDecisionApproved = review.approved;
 		layout = BankDocumentLayouts.loanDecision(review, loanId);
 		invalidateTextOverlays();
 	}
@@ -148,6 +160,8 @@ class BankDocument extends DeskDocument
 				BankDocumentLayouts.loanChecklist();
 			case BankDocumentVariant.LoanDecision:
 				BankDocumentLayouts.loanDecision({approved: false, errors: ["Pending review."], grantLines: []});
+			case BankDocumentVariant.ClientDetails:
+				BankDocumentLayouts.clientDetails(null);
 		}
 	}
 
@@ -484,13 +498,13 @@ class BankDocument extends DeskDocument
 				return partBounds;
 		}
 
-		return {
-			x: x,
-			y: y,
-			w: width,
-			h: height,
-			tag: variant == BankDocumentVariant.ApplicationForm ? BookScanActions.LOAN_APPLICATION_TAG : null
-		};
+		var tag:Null<String> = null;
+		if (variant == BankDocumentVariant.ApplicationForm)
+			tag = BookScanActions.LOAN_APPLICATION_TAG;
+		else if (variant == BankDocumentVariant.ClientDetails)
+			tag = BookScanActions.CLIENT_DETAILS_TAG;
+
+		return getDocumentScanBounds(tag);
 	}
 
 	override function shouldOpenOnEmployerDrop():Bool
@@ -508,7 +522,7 @@ class BankDocument extends DeskDocument
 
 	override public function rejectsPrinterAndShredder():Bool
 	{
-		return variant == BankDocumentVariant.LoanDecision;
+		return variant == BankDocumentVariant.LoanDecision && loanDecisionApproved;
 	}
 
 	override public function lockForShredder():Void
@@ -822,6 +836,7 @@ class BankDocument extends DeskDocument
 			textLayoutDirty = false;
 			bodyTextsShown = false;
 			footerTextsShown = false;
+			lastTextOverlayLayoutKey = -1.0;
 		}
 
 		if (isOpenOnEmployerTable())
@@ -849,12 +864,18 @@ class BankDocument extends DeskDocument
 
 		if (!shouldShowBody)
 		{
+			lastTextOverlayLayoutKey = -1.0;
 			for (text in bodyTexts)
 				text.clipRect = null;
 			for (value in fieldValues)
 				value.clipRect = null;
 			return;
 		}
+
+		var layoutKey = x + y * 10000 + width * 100 + height;
+		if (layoutKey == lastTextOverlayLayoutKey)
+			return;
+		lastTextOverlayLayoutKey = layoutKey;
 
 		syncTextOverlayLayerOrder();
 
@@ -863,27 +884,82 @@ class BankDocument extends DeskDocument
 
 	function scanBoundsForPartAt(point:FlxPoint):Null<ScanBounds>
 	{
-		for (text in bodyTexts)
+		for (i in 0...bodyTexts.length)
 		{
+			var text = bodyTexts[i];
 			if (!text.visible)
 				continue;
-			var bounds = textScanBounds(text);
+
+			if (variant == BankDocumentVariant.ClientDetails && i == 1)
+			{
+				var lineBounds = clientDetailsBodyScanBoundsAt(point, text);
+				if (lineBounds != null)
+					return lineBounds;
+				continue;
+			}
+
+			var bounds = textScanBounds(text, scanTagForBodyText(i));
 			if (pointInScanBounds(point, bounds))
 				return bounds;
 		}
 
-		for (value in fieldValues)
+		for (i in 0...fieldValues.length)
 		{
+			var value = fieldValues[i];
 			if (!value.visible)
 				continue;
-			var bounds = textScanBounds(value);
+			var bounds = textScanBounds(value, scanTagForField(i));
 			if (pointInScanBounds(point, bounds))
 				return bounds;
 		}
 		return null;
 	}
 
-	function textScanBounds(text:FlxText):ScanBounds
+	function clientDetailsBodyScanBoundsAt(point:FlxPoint, body:FlxText):Null<ScanBounds>
+	{
+		var fullBounds = textScanBounds(body, null);
+		if (!pointInScanBounds(point, fullBounds))
+			return null;
+
+		var localX = Std.int(point.x - body.x);
+		var localY = Std.int(point.y - body.y);
+		var charIndex = body.textField.getCharIndexAtPoint(localX, localY);
+		var tag = BookScanActions.CLIENT_DETAILS_TAG;
+		if (charIndex >= 0)
+		{
+			var displayText = body.text;
+			var lineStart = displayText.lastIndexOf("\n", charIndex - 1) + 1;
+			var lineEnd = displayText.indexOf("\n", charIndex);
+			if (lineEnd < 0)
+				lineEnd = displayText.length;
+			var line = StringTools.trim(displayText.substring(lineStart, lineEnd));
+			if (StringTools.startsWith(line, "Person:"))
+				tag = BookScanActions.DOCUMENT_NAME_TAG;
+		}
+
+		return textScanBounds(body, tag);
+	}
+
+	function scanTagForBodyText(index:Int):Null<String>
+	{
+		return null;
+	}
+
+	function scanTagForField(index:Int):Null<String>
+	{
+		if (index >= layout.fields.length)
+			return null;
+
+		if (layout.fields[index].kind == AccountHolder)
+			return BookScanActions.DOCUMENT_NAME_TAG;
+
+		if (variant == BankDocumentVariant.ClientDetails)
+			return BookScanActions.CLIENT_DETAILS_TAG;
+
+		return null;
+	}
+
+	function textScanBounds(text:FlxText, ?tag:Null<String>):ScanBounds
 	{
 		var glyphW = text.textField.textWidth;
 		var glyphH = text.textField.textHeight;
@@ -892,7 +968,8 @@ class BankDocument extends DeskDocument
 			y: text.y,
 			w: glyphW > 0 ? glyphW : text.width,
 			h: glyphH > 0 ? glyphH : text.height,
-			pad: FIELD_SCAN_PAD
+			pad: FIELD_SCAN_PAD,
+			tag: tag
 		};
 	}
 
@@ -943,9 +1020,29 @@ class BankDocument extends DeskDocument
 		if (cams == null)
 			cams = [flixel.FlxG.camera];
 		for (text in bodyTexts)
+		{
+			if (sameCameras(text.cameras, cams))
+				continue;
 			text.cameras = cams.copy();
+		}
 		for (value in fieldValues)
+		{
+			if (sameCameras(value.cameras, cams))
+				continue;
 			value.cameras = cams.copy();
+		}
+	}
+
+	function sameCameras(a:Array<flixel.FlxCamera>, b:Array<flixel.FlxCamera>):Bool
+	{
+		if (a == null || b == null)
+			return a == b;
+		if (a.length != b.length)
+			return false;
+		for (i in 0...a.length)
+			if (a[i] != b[i])
+				return false;
+		return true;
 	}
 }
 

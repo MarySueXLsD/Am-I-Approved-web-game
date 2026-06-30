@@ -16,6 +16,14 @@ class ClientScenario
 	public var expectedSpendHousing:Float;
 	public var expectedSpendLiving:Float;
 	public var expectedSpendOther:Float;
+	public var isTutorial:Bool;
+	public var jobContractVariant:Null<JobContractVariant>;
+	public var idCardCitizenIndex:Int;
+	public var expectedAnnualSalary:Float;
+	public var annualSalaryTolerance:Float;
+	public var passportIncludedInOpening:Bool;
+	public var requiresDocumentReturn:Bool;
+	public var identityFraud:Bool;
 
 	public function new(
 		portraitPath:String,
@@ -31,7 +39,15 @@ class ClientScenario
 		comfortablePaymentTolerance:Float,
 		expectedSpendHousing:Float,
 		expectedSpendLiving:Float,
-		expectedSpendOther:Float
+		expectedSpendOther:Float,
+		?isTutorial:Bool = false,
+		?jobContractVariant:Null<JobContractVariant> = null,
+		?idCardCitizenIndex:Int = -1,
+		?expectedAnnualSalary:Float = 0,
+		?annualSalaryTolerance:Float = 100,
+		?passportIncludedInOpening:Bool = false,
+		?requiresDocumentReturn:Bool = false,
+		?identityFraud:Bool = false
 	)
 	{
 		this.portraitPath = portraitPath;
@@ -48,6 +64,19 @@ class ClientScenario
 		this.expectedSpendHousing = expectedSpendHousing;
 		this.expectedSpendLiving = expectedSpendLiving;
 		this.expectedSpendOther = expectedSpendOther;
+		this.isTutorial = isTutorial;
+		this.jobContractVariant = jobContractVariant;
+		this.idCardCitizenIndex = idCardCitizenIndex;
+		this.expectedAnnualSalary = expectedAnnualSalary;
+		this.annualSalaryTolerance = annualSalaryTolerance;
+		this.passportIncludedInOpening = passportIncludedInOpening;
+		this.requiresDocumentReturn = requiresDocumentReturn;
+		this.identityFraud = identityFraud;
+	}
+
+	public function needsAnnualSalaryUpdate():Bool
+	{
+		return expectedAnnualSalary > 0;
 	}
 
 	public function expectedMonthlySalary(citizen:Citizen):Float
@@ -60,6 +89,11 @@ class ClientScenario
 	public function openingMessages():Array<String>
 	{
 		return ClientScenarios.openingMessagesFor(this);
+	}
+
+	public function openingConvSteps():Null<Array<ClientConvStep>>
+	{
+		return ClientScenarios.openingConvStepsFor(this);
 	}
 
 	public function thanksMessages():Array<String>

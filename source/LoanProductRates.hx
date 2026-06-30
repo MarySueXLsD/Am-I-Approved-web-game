@@ -77,6 +77,7 @@ class LoanProductRates
 	];
 
 	public static var SECURITY_TYPES:Array<String> = ["secured", "unsecured"];
+	public static var SECURITY_DISPLAY_TYPES:Array<String> = ["Secured", "Not secured"];
 
 	public static function normalizeProduct(raw:String):String
 	{
@@ -85,7 +86,10 @@ class LoanProductRates
 
 	public static function normalizeSecurity(raw:String):String
 	{
-		return StringTools.trim(raw).toLowerCase();
+		var s = StringTools.trim(raw).toLowerCase();
+		if (s == "not secured")
+			return "unsecured";
+		return s;
 	}
 
 	public static function isKnownProduct(productKey:String):Bool

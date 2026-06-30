@@ -83,6 +83,8 @@ class MainMenuOptionsPopup extends MainMenuSlidePopup
 	override function onBeforeShow():Void
 	{
 		resetCloseHover();
+		refreshValues();
+		refreshSliderFills();
 	}
 
 	override function onClosed():Void

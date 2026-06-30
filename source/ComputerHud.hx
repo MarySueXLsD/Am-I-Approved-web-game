@@ -52,7 +52,9 @@ class ComputerHud extends FlxGroup
 	{
 		super.update(elapsed);
 
-		if (MonitorOverlay.pausesDialogue() || ShiftPauseOverlay.pausesDialogue())
+		if (MonitorOverlay.pausesDialogue() || ShiftPauseOverlay.pausesDialogue()
+			|| MainMenuOverlay.blocksWorldInput() || BeginningDayOverlay.blocksWorldInput()
+			|| StudioLogoSplash.blocksWorldInput())
 			return;
 
 		GameClock.advance(elapsed);

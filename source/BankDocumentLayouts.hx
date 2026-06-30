@@ -20,8 +20,7 @@ class BankDocumentLayouts
 			labeledLine("Loan ID", id),
 			"",
 			"@Required documents:@",
-			checklistBullet("Passport copy", completed.indexOf(PassportCopy) >= 0),
-			checklistBullet("National ID copy", completed.indexOf(NationalIdCopy) >= 0),
+			checklistBullet("ID copy", completed.indexOf(IdOrPassportCopy) >= 0),
 			checklistBullet("Loan application form", completed.indexOf(LoanApplicationForm) >= 0),
 			checklistBullet("Loan checklist", completed.indexOf(LoanChecklist) >= 0)
 		].join("\n");
@@ -61,6 +60,52 @@ class BankDocumentLayouts
 			},
 			disclaimer: {
 				text: "Please collect every item listed above\nbefore submitting the loan folder",
+				x: BODY_X,
+				y: 1140,
+				width: BODY_W,
+				fontSize: 8,
+				bold: false,
+				color: BODY_COLOR,
+				leading: null,
+				align: "center",
+				wordWrap: true
+			},
+			fields: [
+				{kind: AccountHolder, x: 80, y: 1375, width: 500, fontSize: 8},
+				{kind: Date, x: 700, y: 1375, width: 300, fontSize: 8}
+			],
+			valueColor: BODY_COLOR
+		};
+	}
+
+	public static function clientDetails(?c:Citizen):BankDocumentLayout
+	{
+		return {
+			documentPath: DOCUMENT_PATH,
+			title: {
+				text: "Client Details",
+				x: BODY_X,
+				y: 250,
+				width: BODY_W,
+				fontSize: 13,
+				bold: true,
+				color: BODY_COLOR,
+				leading: null,
+				align: "center"
+			},
+			formBody: {
+				text: c != null ? clientDetailsBodyText(c) : "",
+				x: BODY_X,
+				y: 330,
+				width: BODY_W,
+				fontSize: FORM_FONT,
+				bold: false,
+				color: BODY_COLOR,
+				leading: FORM_LEADING,
+				align: "left"
+			},
+			disclaimer: {
+				text: "",
 				x: BODY_X,
 				y: 1140,
 				width: BODY_W,
@@ -161,7 +206,8 @@ class BankDocumentLayouts
 				bold: false,
 				color: BODY_COLOR,
 				leading: FORM_LEADING,
-				align: "left"
+				align: "left",
+				wordWrap: true
 			},
 			disclaimer: {
 				text: disclaimer,
@@ -205,6 +251,114 @@ class BankDocumentLayouts
 				lines.push(line);
 		}
 		return lines.join("\n");
+	}
+
+	static function clientDetailsBodyText(c:Citizen):String
+	{
+		var lines:Array<String> = [];
+		for (entry in CitizenRegistry.buildDetailEntries(c))
+		{
+			switch (entry)
+			{
+				case Single(field):
+					if (field.path == "registryId" || field.path == "passportName" || field.path == "address.street")
+						continue;
+					lines.push(detailFieldLine(c, field));
+				case Pair(left, right):
+					if (left.path == "firstName" && right.path == "lastName")
+					{
+						lines.push(personLine(c));
+						continue;
+					}
+					if (left.path == "taxId" && right.path == "passportName")
+					{
+						lines.push(detailFieldLine(c, left));
+						continue;
+					}
+					if (left.path == "dateOfBirth" && right.path == "sex")
+					{
+						lines.push(detailFieldLine(c, left));
+						continue;
+					}
+					if (left.path == "nationality" && right.path == "maritalStatus")
+					{
+						lines.push(labeledLine("Nationality / Marital Status",
+							detailFieldValue(c, left) + " / " + detailFieldValue(c, right)));
+						continue;
+					}
+					if (left.path == "occupation" && right.path == "dependents")
+					{
+						lines.push(labeledLine("Occupation / Dependents",
+							detailFieldValue(c, left) + " / " + detailFieldValue(c, right)));
+						continue;
+					}
+					if (left.path == "averageAnnualSalary" && right.path == "salaryCurrency")
+					{
+						lines.push(labeledLine("Annual Salary",
+							detailFieldValue(c, left) + " " + detailFieldValue(c, right)));
+						continue;
+					}
+					if (left.path == "address.country" && right.path == "country")
+					{
+						lines.push(detailFieldLine(c, left));
+						continue;
+					}
+					if (left.path == "address.region" && right.path == "address.city")
+					{
+						lines.push(labeledLine("City",
+							detailFieldValue(c, left) + ", " + detailFieldValue(c, right)));
+						continue;
+					}
+					if (left.path == "address.postalCode" && right.path == "yearsAtAddress")
+					{
+						lines.push(labeledLine("Street",
+							detailFieldValueForPath(c, "address.street") + ", " + detailFieldValue(c, left)));
+						lines.push(detailFieldLine(c, right));
+						continue;
+					}
+					if (left.path == "passportIssued" && right.path == "passportExpires")
+						continue;
+					if (left.path == "phone" && right.path == "email")
+					{
+						lines.push(detailFieldLine(c, left));
+						break;
+					}
+					lines.push(detailFieldLine(c, left));
+					lines.push(detailFieldLine(c, right));
+			}
+		}
+		return lines.join("\n");
+	}
+
+	static function personLine(c:Citizen):String
+	{
+		var sex = switch (CitizenRegistry.getFieldValue(c, "sex"))
+		{
+			case "Male": "male";
+			case "Female": "female";
+			default:
+				var raw = StringTools.trim(CitizenRegistry.getFieldValue(c, "sex")).toLowerCase();
+				raw != "" ? raw : "—";
+		};
+		return labeledLine("Person", CitizenRegistry.displayName(c) + " - " + sex);
+	}
+
+	static function detailFieldValueForPath(c:Citizen, path:String):String
+	{
+		var value = CitizenRegistry.getFieldValue(c, path);
+		if (value == null || StringTools.trim(value) == "")
+			return "—";
+		return value;
+	}
+
+	static function detailFieldValue(c:Citizen, field:CitizenDetailField):String
+	{
+		return detailFieldValueForPath(c, field.path);
+	}
+
+	static function detailFieldLine(c:Citizen, field:CitizenDetailField):String
+	{
+		return labeledLine(field.label, detailFieldValue(c, field));
 	}
 
 	static function applicationFormBodyText(loanId:String, ?data:LoanApplicationData):String

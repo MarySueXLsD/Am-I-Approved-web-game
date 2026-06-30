@@ -144,6 +144,7 @@ class PrinterStation extends FlxGroup
 		var s = body.scale.x;
 		isPrinting = true;
 		printCompleted = false;
+		OfficeAmbientAudio.playPrinterWorking();
 		paper.angle = 0;
 		if (paperTween != null)
 		{
@@ -229,6 +230,16 @@ class PrinterStation extends FlxGroup
 		terminalPrintJob = job;
 	}
 
+	public function getTerminalPrintJob():TerminalPrintJob
+	{
+		return terminalPrintJob;
+	}
+
+	public function isPrintingPaper():Bool
+	{
+		return isPrinting;
+	}
+
 	public function consumeTerminalPrintJob():TerminalPrintJob
 	{
 		var job = terminalPrintJob;
@@ -274,6 +285,7 @@ class PrinterStation extends FlxGroup
 
 		lastScannedDoc = doc;
 		isScanning = true;
+		OfficeAmbientAudio.playScannerWorking();
 		clearScanVisuals();
 
 		var s = body.scale.x;

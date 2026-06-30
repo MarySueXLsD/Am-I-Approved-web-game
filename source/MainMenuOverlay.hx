@@ -3,6 +3,7 @@ package;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.group.FlxGroup;
+import flixel.sound.FlxSound;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
 import flixel.text.FlxText.FlxTextBorderStyle;
@@ -35,8 +36,36 @@ class MainMenuOverlay extends FlxGroup
 	static inline var HOVER_SCALE = 1.06;
 	static inline var HOVER_TWEEN_DURATION = 0.14;
 	static inline var INTRO_FADE_DURATION = 0.9;
+	static inline var NEW_GAME_FADE_TO_BLACK = 0.9;
+	static inline var NEW_GAME_TRAFFIC_FADE_DURATION = 3.0;
+	static inline var NEW_GAME_MUSIC_FADE_DURATION = 2.0;
+	static inline var NEW_GAME_MUSIC_VOLUME_FACTOR = 0.5;
+	static inline var TRAFFIC_AMBIENT = "static/Audio/Ambient/TrafficMenu.mp3";
+	static inline var MENU_MUSIC = "static/Audio/OST/BreakTheBankloop.mp3";
 
 	static var instance:MainMenuOverlay;
+	static var preloadedMenuMusic:FlxSound;
+	static var preloadedTrafficAmbient:FlxSound;
+
+	public static function preloadAudio():Void
+	{
+		FlxG.sound.cache(MENU_MUSIC);
+		FlxG.sound.cache(TRAFFIC_AMBIENT);
+
+		if (preloadedMenuMusic == null)
+		{
+			preloadedMenuMusic = FlxG.sound.load(MENU_MUSIC, 0, true, null, false, false);
+			if (preloadedMenuMusic != null)
+				preloadedMenuMusic.persist = true;
+		}
+
+		if (preloadedTrafficAmbient == null)
+		{
+			preloadedTrafficAmbient = FlxG.sound.load(TRAFFIC_AMBIENT, 0, true, null, false, false);
+			if (preloadedTrafficAmbient != null)
+				preloadedTrafficAmbient.persist = true;
+		}
+	}
 
 	var bgImage:FlxSprite;
 	var blackScreen:FlxSprite;
@@ -51,6 +80,13 @@ class MainMenuOverlay extends FlxGroup
 	var menuItems:Array<MainMenuItem> = [];
 	var creditsPopup:MainMenuCreditsPopup;
 	var optionsPopup:MainMenuOptionsPopup;
+	var trafficAmbient:FlxSound;
+	var menuMusic:FlxSound;
+	var trafficAmbientFadeTween:FlxTween;
+	var menuMusicFadeTween:FlxTween;
+	var musicVolumeMultiplier = 1.0;
+	var newGameTransition = false;
+	var menuAudioPending = false;
 	var onNewGame:Void->Void;
 	var hoveredIndex = -1;
 
@@ -58,7 +94,7 @@ class MainMenuOverlay extends FlxGroup
 
 	public static function blocksWorldInput():Bool
 	{
-		return instance != null && instance.isShowing;
+		return instance != null && (instance.isShowing || instance.newGameTransition);
 	}
 
 	public function new(?newGame:Void->Void)
@@ -102,6 +138,8 @@ class MainMenuOverlay extends FlxGroup
 		optionsPopup = new MainMenuOptionsPopup();
 		add(optionsPopup);
 
+		GameSettings.onVolumeChanged(syncMenuAudioVolumes);
+
 		blackScreen = new FlxSprite();
 		add(blackScreen);
 
@@ -114,6 +152,11 @@ class MainMenuOverlay extends FlxGroup
 			return;
 
 		cancelIntroFade();
+		cancelNewGameAudioTweens();
+		newGameTransition = false;
+		musicVolumeMultiplier = 1.0;
+		traffic.resetFadeState();
+		restoreMenuChrome();
 		isShowing = true;
 		visible = true;
 		creditsPopup.forceClose();
@@ -123,6 +166,8 @@ class MainMenuOverlay extends FlxGroup
 		creditsPopup.prepare();
 		clouds.startClouds();
 		traffic.startTraffic();
+		menuAudioPending = true;
+		ensureMenuAudio();
 
 		if (fadeFromBlack)
 			startIntroFade();
@@ -143,6 +188,8 @@ class MainMenuOverlay extends FlxGroup
 		optionsPopup.forceClose();
 		clouds.stopClouds();
 		traffic.stopTraffic();
+		stopTrafficAmbient();
+		stopMenuMusic();
 		isShowing = false;
 		visible = false;
 		hoveredIndex = -1;
@@ -153,6 +200,8 @@ class MainMenuOverlay extends FlxGroup
 	{
 		if (!isShowing)
 			return false;
+
+		ensureMenuAudio();
 
 		if (optionsPopup.isActive())
 		{
@@ -194,6 +243,12 @@ class MainMenuOverlay extends FlxGroup
 
 		if (!isShowing)
 			return;
+
+		if (menuAudioPending || !isMenuAudioPlaying())
+			ensureMenuAudio();
+
+		if (FlxG.mouse.justPressed || FlxG.mouse.justMoved)
+			ensureMenuAudio();
 
 		var p = FlxG.mouse.getViewPosition();
 
@@ -258,9 +313,115 @@ class MainMenuOverlay extends FlxGroup
 
 	function startNewGame():Void
 	{
-		hide();
-		if (onNewGame != null)
-			onNewGame();
+		if (newGameTransition)
+			return;
+
+		beginNewGameTransition();
+	}
+
+	public function completeNewGameTransition():Void
+	{
+		cancelIntroFade();
+		cancelTrafficAmbientFadeTween();
+		newGameTransition = false;
+		stopTrafficAmbient();
+		traffic.resetFadeState();
+		traffic.stopTraffic();
+		blackScreen.visible = false;
+		blackScreen.alpha = 0;
+		visible = false;
+		isShowing = false;
+		hoveredIndex = -1;
+		resetMenuItemScales();
+		restoreMenuChrome();
+	}
+
+	public function releaseMenuMusicForGameplay():Void
+	{
+		cancelMenuMusicFadeTween();
+		if (menuMusic != null)
+			menuMusic.stop();
+	}
+
+	public function stopMenuMusicForReturnToMenu():Void
+	{
+		musicVolumeMultiplier = 1.0;
+		releaseMenuMusicForGameplay();
+	}
+
+	function beginNewGameTransition():Void
+	{
+		newGameTransition = true;
+
+		cancelIntroFade();
+		creditsPopup.forceClose();
+		optionsPopup.forceClose();
+		clouds.stopClouds();
+		isShowing = false;
+		hoveredIndex = -1;
+		resetMenuItemScales();
+
+		traffic.beginFadeOut(NEW_GAME_TRAFFIC_FADE_DURATION, function()
+		{
+			if (newGameTransition)
+				visible = false;
+		});
+		fadeTrafficAmbientOut(NEW_GAME_TRAFFIC_FADE_DURATION);
+		fadeMenuMusicVolume(NEW_GAME_MUSIC_VOLUME_FACTOR, NEW_GAME_MUSIC_FADE_DURATION);
+
+		layout();
+		bringBlackToFront();
+		blackScreen.visible = true;
+		blackScreen.alpha = 0;
+
+		introFadeTween = FlxTween.tween(blackScreen, {alpha: 1}, NEW_GAME_FADE_TO_BLACK, {
+			ease: FlxEase.sineInOut,
+			onComplete: function(_)
+			{
+				introFadeTween = null;
+				hideMenuChrome();
+				if (onNewGame != null)
+					onNewGame();
+			}
+		});
+	}
+
+	function bringBlackToFront():Void
+	{
+		remove(blackScreen, false);
+		add(blackScreen);
+	}
+
+	function hideMenuChrome():Void
+	{
+		sidebar.visible = false;
+		sidebarDivider.visible = false;
+		titleOrnament.visible = false;
+		titleLine1.visible = false;
+		titleLine2.visible = false;
+		clouds.visible = false;
+
+		for (item in menuItems)
+		{
+			item.hit.visible = false;
+			item.text.visible = false;
+		}
+	}
+
+	function restoreMenuChrome():Void
+	{
+		sidebar.visible = true;
+		sidebarDivider.visible = true;
+		titleOrnament.visible = true;
+		titleLine1.visible = true;
+		titleLine2.visible = true;
+		clouds.visible = true;
+
+		for (item in menuItems)
+		{
+			item.hit.visible = true;
+			item.text.visible = true;
+		}
 	}
 
 	function openOptions():Void
@@ -336,12 +497,12 @@ class MainMenuOverlay extends FlxGroup
 
 		var titleSize = Std.int(Math.max(19, h / 22 - 1));
 		var itemSize = Std.int(Math.max(18, h / 28));
-		var pad = Std.int(Math.max(16, sidebarW * 0.1));
+		var pad = Std.int(Math.max(8, sidebarW * 0.05));
 		var itemH = itemSize + 22;
 		var itemGap = 8;
 		var itemW = sidebarW - pad * 2;
 		var ornamentH = 2;
-		var ornamentW = Std.int(itemW * 0.42);
+		var ornamentW = Std.int(sidebarW * 0.92);
 		var titleLineGap = Std.int(Math.max(2, titleSize * 0.08));
 		var titleOrnamentGap = Std.int(Math.max(10, titleSize * 0.4));
 		var titleMenuGap = Std.int(Math.max(20, h * 0.035));
@@ -349,11 +510,11 @@ class MainMenuOverlay extends FlxGroup
 		var contentY = Std.int(Math.max(pad, h * 0.07));
 		var titleBlockH = titleSize * 2 + titleLineGap;
 
-		layoutTitleLine(titleLine1, "Am I", titleSize, itemW, contentX, contentY);
-		layoutTitleLine(titleLine2, "approved?", titleSize, itemW, contentX, contentY + titleSize + titleLineGap);
+		layoutTitleLine(titleLine1, "Am I", titleSize, sidebarW, sidebarX, contentY);
+		layoutTitleLine(titleLine2, "approved?", titleSize, sidebarW, sidebarX, contentY + titleSize + titleLineGap);
 
 		var ornamentY = contentY + titleBlockH + titleOrnamentGap;
-		var ornamentX = contentX + (itemW - ornamentW) * 0.5;
+		var ornamentX = sidebarX + (sidebarW - ornamentW) * 0.5;
 		titleOrnament.setPosition(ornamentX, ornamentY);
 		titleOrnament.makeGraphic(ornamentW, ornamentH, GOLD_LINE, true);
 		titleOrnament.updateHitbox();
@@ -385,6 +546,7 @@ class MainMenuOverlay extends FlxGroup
 	function layoutTitleLine(label:FlxText, text:String, size:Int, width:Int, x:Float, y:Float):Void
 	{
 		label.text = text;
+		label.wordWrap = false;
 		label.setFormat(null, size, TITLE_COLOR, "center");
 		label.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(24, 16, 10), Math.max(1, size / 16));
 		label.fieldWidth = width;
@@ -472,5 +634,197 @@ class MainMenuOverlay extends FlxGroup
 		isShowing = false;
 		blackScreen.visible = false;
 		blackScreen.alpha = 0;
+	}
+
+	function adoptPreloadedAudio():Void
+	{
+		if (menuMusic == null && preloadedMenuMusic != null)
+			menuMusic = preloadedMenuMusic;
+		if (trafficAmbient == null && preloadedTrafficAmbient != null)
+			trafficAmbient = preloadedTrafficAmbient;
+	}
+
+	function startTrafficAmbient():Void
+	{
+		adoptPreloadedAudio();
+
+		if (trafficAmbient != null)
+		{
+			syncTrafficAmbientVolume();
+			if (!trafficAmbient.playing)
+				trafficAmbient.play(true);
+			return;
+		}
+
+		trafficAmbient = FlxG.sound.load(TRAFFIC_AMBIENT, GameSettings.sfxVolume, true, null, false, true);
+		if (trafficAmbient != null)
+			trafficAmbient.persist = true;
+	}
+
+	function stopTrafficAmbient():Void
+	{
+		cancelTrafficAmbientFadeTween();
+
+		if (trafficAmbient == null)
+			return;
+
+		trafficAmbient.stop();
+	}
+
+	function fadeTrafficAmbientOut(duration:Float):Void
+	{
+		if (trafficAmbient == null || !trafficAmbient.playing)
+			return;
+
+		cancelTrafficAmbientFadeTween();
+		trafficAmbientFadeTween = FlxTween.tween(trafficAmbient, {volume: 0}, duration, {
+			ease: FlxEase.sineInOut,
+			onComplete: function(_)
+			{
+				trafficAmbientFadeTween = null;
+				stopTrafficAmbient();
+			}
+		});
+	}
+
+	function cancelTrafficAmbientFadeTween():Void
+	{
+		if (trafficAmbientFadeTween != null)
+		{
+			trafficAmbientFadeTween.cancel();
+			trafficAmbientFadeTween = null;
+		}
+
+		if (trafficAmbient != null)
+			FlxTween.cancelTweensOf(trafficAmbient);
+	}
+
+	function syncTrafficAmbientVolume():Void
+	{
+		if (trafficAmbient == null)
+			return;
+
+		trafficAmbient.volume = GameSettings.sfxVolume;
+	}
+
+	function syncMenuAudioVolumes():Void
+	{
+		syncTrafficAmbientVolume();
+		syncMenuMusicVolume();
+	}
+
+	function ensureMenuAudio():Void
+	{
+		if (StudioLogoSplash.blocksWorldInput())
+			return;
+
+		startTrafficAmbient();
+		startMenuMusic();
+		menuAudioPending = !isMenuMusicPlaying();
+	}
+
+	function isMenuAudioPlaying():Bool
+	{
+		var musicOk = menuMusic != null && menuMusic.playing;
+		var trafficOk = trafficAmbient != null && trafficAmbient.playing;
+		return musicOk && trafficOk;
+	}
+
+	function isMenuMusicPlaying():Bool
+	{
+		return menuMusic != null && menuMusic.playing;
+	}
+
+	function startMenuMusic():Void
+	{
+		adoptPreloadedAudio();
+
+		if (menuMusic != null)
+		{
+			syncMenuMusicVolume();
+			if (!menuMusic.playing)
+				menuMusic.play(true);
+			return;
+		}
+
+		menuMusic = FlxG.sound.load(MENU_MUSIC, menuMusicVolume(), true, null, false, true);
+
+		if (menuMusic != null)
+		{
+			menuMusic.persist = true;
+			menuAudioPending = !isMenuMusicPlaying();
+		}
+	}
+
+	function stopMenuMusic():Void
+	{
+		cancelMenuMusicFadeTween();
+
+		if (menuMusic == null)
+			return;
+
+		menuMusic.stop();
+	}
+
+	function fadeMenuMusicVolume(factor:Float, duration:Float):Void
+	{
+		adoptPreloadedAudio();
+		if (menuMusic == null)
+			startMenuMusic();
+
+		if (menuMusic == null)
+			return;
+
+		if (!menuMusic.playing)
+			menuMusic.play(true);
+
+		cancelMenuMusicFadeTween();
+		var targetVol = MusicVolume.menuVolume(factor);
+		if (duration <= 0)
+		{
+			menuMusic.volume = targetVol;
+			musicVolumeMultiplier = factor;
+			return;
+		}
+
+		menuMusicFadeTween = FlxTween.tween(menuMusic, {volume: targetVol}, duration, {
+			ease: FlxEase.sineInOut,
+			onComplete: function(_)
+			{
+				menuMusicFadeTween = null;
+				musicVolumeMultiplier = factor;
+			}
+		});
+	}
+
+	function cancelMenuMusicFadeTween():Void
+	{
+		if (menuMusicFadeTween != null)
+		{
+			menuMusicFadeTween.cancel();
+			menuMusicFadeTween = null;
+		}
+
+		if (menuMusic != null)
+			FlxTween.cancelTweensOf(menuMusic);
+	}
+
+	function cancelNewGameAudioTweens():Void
+	{
+		cancelTrafficAmbientFadeTween();
+		cancelMenuMusicFadeTween();
+	}
+
+	function menuMusicVolume():Float
+	{
+		return MusicVolume.menuVolume(musicVolumeMultiplier);
+	}
+
+	function syncMenuMusicVolume():Void
+	{
+		if (menuMusic == null)
+			return;
+
+		menuMusic.volume = menuMusicVolume();
 	}
 }

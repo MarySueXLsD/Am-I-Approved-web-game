@@ -2,8 +2,7 @@ package;
 
 enum LoanChecklistItem
 {
-	PassportCopy;
-	NationalIdCopy;
+	IdOrPassportCopy;
 	LoanApplicationForm;
 	LoanChecklist;
 }

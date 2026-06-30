@@ -313,6 +313,57 @@ class LoanFolderDocument extends DeskDocument
 			&& local.y >= frameHeight * CLOSED_ARROW_NY0 && local.y <= frameHeight * CLOSED_ARROW_NY1;
 	}
 
+	public function getArrowWorldBounds():Null<TutorialGuideRect>
+	{
+		if (!visible || !isBigOnEmployerTable())
+			return null;
+
+		if (folderSpreadOpen)
+			return normRectToWorldBounds(OPENED_ARROW_NX0, OPENED_ARROW_NY0, OPENED_ARROW_NX1, OPENED_ARROW_NY1);
+
+		return normRectToWorldBounds(CLOSED_ARROW_NX0, CLOSED_ARROW_NY0, CLOSED_ARROW_NX1, CLOSED_ARROW_NY1);
+	}
+
+	public function getStorageWorldBounds():Null<TutorialGuideRect>
+	{
+		if (!visible || !folderSpreadOpen)
+			return null;
+
+		var b = getStorageLocalBounds();
+		return localRectToWorldBounds(b.x0, b.y0, b.x1, b.y1);
+	}
+
+	function normRectToWorldBounds(nx0:Float, ny0:Float, nx1:Float, ny1:Float):TutorialGuideRect
+	{
+		return localRectToWorldBounds(frameWidth * nx0, frameHeight * ny0, frameWidth * nx1, frameHeight * ny1);
+	}
+
+	function localRectToWorldBounds(lx0:Float, ly0:Float, lx1:Float, ly1:Float):TutorialGuideRect
+	{
+		var p0 = localPointToWorld(lx0, ly0);
+		var p1 = localPointToWorld(lx1, ly0);
+		var p2 = localPointToWorld(lx0, ly1);
+		var p3 = localPointToWorld(lx1, ly1);
+		var minX = Math.min(Math.min(p0.x, p1.x), Math.min(p2.x, p3.x));
+		var minY = Math.min(Math.min(p0.y, p1.y), Math.min(p2.y, p3.y));
+		var maxX = Math.max(Math.max(p0.x, p1.x), Math.max(p2.x, p3.x));
+		var maxY = Math.max(Math.max(p0.y, p1.y), Math.max(p2.y, p3.y));
+		return {x: minX, y: minY, w: maxX - minX, h: maxY - minY};
+	}
+
+	function localPointToWorld(lx:Float, ly:Float):{x:Float, y:Float}
+	{
+		var rad = angle * Math.PI / 180;
+		var cos = Math.cos(rad);
+		var sin = Math.sin(rad);
+		var sx = lx * scale.x;
+		var sy = ly * scale.y;
+		return {
+			x: x + sx * cos - sy * sin,
+			y: y + sx * sin + sy * cos
+		};
+	}
+
 	public function pointInStorageWorld(px:Float, py:Float):Bool
 	{
 		if (!folderSpreadOpen || !visible)
