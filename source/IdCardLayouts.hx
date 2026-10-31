@@ -28,7 +28,7 @@ class IdCardLayouts
 
 	public static function defaultDeskVariants():Array<IdCardVariant>
 	{
-		return [Lorian, Ostmark];
+		return [Lorian, Kethran, Ostmark];
 	}
 
 	public static function get(variant:IdCardVariant):IdCardLayout

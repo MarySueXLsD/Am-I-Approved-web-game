@@ -5,6 +5,13 @@ import StringTools;
 class LoanApplicationValidator
 {
 	static inline var AMOUNT_TOLERANCE = 1.0;
+	static inline var NOT_AFFORDABLE_PREFIX = "Loan is not affordable";
+
+	/** True when every field matches the client and the only problem is that they can't afford it. */
+	public static function isHonestDecline(review:LoanReviewResult):Bool
+	{
+		return !review.approved && review.errors.length == 1 && StringTools.startsWith(review.errors[0], NOT_AFFORDABLE_PREFIX);
+	}
 
 	public static function review(citizen:Citizen, scenario:ClientScenario, data:Null<LoanApplicationData>, loanId:Null<String>):LoanReviewResult
 	{
@@ -96,7 +103,7 @@ class LoanApplicationValidator
 		if (!calc.ready)
 			errors.push("Loan application is incomplete — fill all required fields.");
 		else if (!isApprovableVerdict(calc.verdict))
-			errors.push("Loan is not affordable with the stated income and expenses (" + formatVerdict(calc.verdict) + ").");
+			errors.push(NOT_AFFORDABLE_PREFIX + " with the stated income and expenses (" + formatVerdict(calc.verdict) + ").");
 
 		if (errors.length > 0)
 			return {approved: false, errors: errors, grantLines: []};
@@ -202,7 +209,9 @@ class LoanApplicationValidator
 			var term = parseTerm(data.term);
 			if (term == null || scenario.expectedTerms.indexOf(term) < 0)
 			{
-				messages.push("That payment's too high — I wanted closer to "
+				var calcForTerm = LoanAffordabilityCalculator.compute(data);
+				var tooLow = calcForTerm.ready && calcForTerm.monthlyPayment < scenario.expectedComfortablePayment;
+				messages.push((tooLow ? "That drags on way too long — I'd rather pay closer to " : "That payment's too high — I wanted closer to ")
 					+ LoanAffordabilityCalculator.formatLorDisplay(scenario.expectedComfortablePayment)
 					+ " LOR a month.");
 			}

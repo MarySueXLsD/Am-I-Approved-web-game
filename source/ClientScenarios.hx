@@ -13,11 +13,12 @@ class ClientScenarios
 	static inline var STEP_PREPARE_TUTORIAL_EXIT = 9;
 	static inline var STEP_PASSPORT = 3;
 	static inline var STEP_ID_HANDOFF = 10;
+	static inline var STEP_SKIP_TUTORIAL = 11;
 
-	static inline var CLIENT_1_CITIZEN_INDEX = 21;
-	static inline var CLIENT_2_CITIZEN_INDEX = 1;
-	static inline var CLIENT_3_CITIZEN_INDEX = 2;
-	static inline var CLIENT_4_CITIZEN_INDEX = 22;
+	static inline var MARCUS_CITIZEN_INDEX = 21;
+	static inline var DENIS_CITIZEN_INDEX = 1;
+	static inline var RACHEL_CITIZEN_INDEX = 22;
+	static inline var GARRETT_CITIZEN_INDEX = 2;
 	static inline var CLIENT_5_CITIZEN_INDEX = 80;
 	static inline var VADZIM_TARGET_ANNUAL = 85240.82;
 	static inline var VADZIM_ANNUAL_TOLERANCE = 2.0;
@@ -28,28 +29,47 @@ class ClientScenarios
 	static inline var KETHRAN_ANNUAL_TOLERANCE = 100.0;
 	static inline var FRAUD_CITIZEN_INDEX = 81;
 	static inline var FRAUD_ID_CITIZEN_INDEX = 7;
+	static inline var FRAUD_ID_PORTRAIT = "static/Clients/client3.png";
 
 	public static function count():Int
 	{
 		return 8;
 	}
 
-	public static inline var LAST_PLAYABLE_CLIENT_INDEX = 4;
+	public static inline var LAST_PLAYABLE_CLIENT_INDEX = 7;
 
+	/**
+	 * Day one, in order of difficulty:
+	 * 1 Marcus  — wedding loan; one bill is quoted per year, not per month.
+	 * 2 Denis   — car loan (Auto product); changes the amount mid-sentence.
+	 * 3 Rachel  — quotes the salary she hopes to earn, not the one on file.
+	 * 4 Garrett — wants a second boat he can't afford: the right call is an honest decline.
+	 * 5 Yerasyl — no loan; monthly Kethran pay must become an annual LOR salary.
+	 * 6 Vadzim  — Ostmark contract to convert, then a full loan.
+	 * 7 "Peter" — someone else's ID. Compare the photo and confront.
+	 */
 	public static function get(index:Int):ClientScenario
 	{
 		return switch (index)
 		{
 			case 0: chefTutorial();
-			case 1: clientOneWedding();
-			case 2: clientTwoDenis();
-			case 3: clientThree();
-			case 4: clientFour();
-			case 5: vadzimSalaryAndLoan();
-			case 6: yerasylSalaryUpdate();
+			case 1: fromCitizenIndex(MARCUS_CITIZEN_INDEX, "static/Clients/client1.png", Lorian);
+			case 2: fromCitizenIndex(DENIS_CITIZEN_INDEX, "static/Clients/client2.png");
+			case 3: fromCitizenIndex(RACHEL_CITIZEN_INDEX, "static/Clients/client4.png");
+			case 4: garrettSecondBoat();
+			case 5: yerasylSalaryUpdate();
+			case 6: vadzimSalaryAndLoan();
 			case 7: ostmarkIdentityFraud();
-			default: clientOneWedding();
+			default: fromCitizenIndex(MARCUS_CITIZEN_INDEX, "static/Clients/client1.png", Lorian);
 		}
+	}
+
+	static function garrettSecondBoat():ClientScenario
+	{
+		var scenario = fromCitizenIndex(GARRETT_CITIZEN_INDEX, "static/Clients/client3.png");
+		scenario.expectDecline = true;
+		scenario.requiresDocumentReturn = true;
+		return scenario;
 	}
 
 	static function chefTutorial():ClientScenario
@@ -73,26 +93,6 @@ class ClientScenarios
 		);
 	}
 
-	static function clientOneWedding():ClientScenario
-	{
-		return fromCitizenIndex(CLIENT_1_CITIZEN_INDEX, "static/Clients/client1.png", Lorian);
-	}
-
-	static function clientTwoDenis():ClientScenario
-	{
-		return fromCitizenIndex(CLIENT_2_CITIZEN_INDEX, "static/Clients/client2.png");
-	}
-
-	static function clientThree():ClientScenario
-	{
-		return fromCitizenIndex(CLIENT_3_CITIZEN_INDEX, "static/Clients/client3.png");
-	}
-
-	static function clientFour():ClientScenario
-	{
-		return fromCitizenIndex(CLIENT_4_CITIZEN_INDEX, "static/Clients/client4.png");
-	}
-
 	static function vadzimSalaryAndLoan():ClientScenario
 	{
 		return new ClientScenario(
@@ -104,12 +104,12 @@ class ClientScenarios
 			40000,
 			"personal",
 			"unsecured",
-			[],
-			0,
-			0,
-			0,
-			0,
-			0,
+			[38, 39, 40, 41, 42, 43, 44, 45],
+			1200,
+			100,
+			700,
+			400,
+			150,
 			false,
 			Ostmark,
 			-1,
@@ -138,7 +138,7 @@ class ClientScenarios
 	{
 		return new ClientScenario(
 			"static/Clients/client1.png",
-			CLIENT_1_CITIZEN_INDEX,
+			MARCUS_CITIZEN_INDEX,
 			false,
 			false,
 			Lorian,
@@ -169,7 +169,7 @@ class ClientScenarios
 			KETHRAN_CITIZEN_INDEX,
 			false,
 			true,
-			Lorian,
+			IdCardVariant.Kethran,
 			0,
 			"",
 			"",
@@ -192,7 +192,7 @@ class ClientScenarios
 
 	static function ostmarkIdentityFraud():ClientScenario
 	{
-		return new ClientScenario(
+		var scenario = new ClientScenario(
 			"static/Clients/client7.png",
 			FRAUD_CITIZEN_INDEX,
 			false,
@@ -216,6 +216,8 @@ class ClientScenarios
 			true,
 			true
 		);
+		scenario.idPortraitPath = FRAUD_ID_PORTRAIT;
+		return scenario;
 	}
 
 	public static function openingConvStepsFor(scenario:ClientScenario):Null<Array<ClientConvStep>>
@@ -239,9 +241,20 @@ class ClientScenarios
 
 	public static function chefTutorialIdReturnThanksSteps():Array<ClientConvStep>
 	{
+		var steps = chefTutorialSendOffSteps();
+		steps.push({type: STEP_END_VISIT, text: ""});
+		return steps;
+	}
+
+	/** Short send-off once training is done — the handbook (pages 33–35) holds the full cheat sheet. */
+	static function chefTutorialSendOffSteps():Array<ClientConvStep>
+	{
 		return [
-			{type: STEP_CLIENT, text: "Thanks. Good luck."},
-			{type: STEP_END_VISIT, text: ""}
+			{type: STEP_CLIENT, text: "Congratulations. You're officially certified!"},
+			{type: STEP_CLIENT, text: "Three rules: listen, check the records, do the math."},
+			{type: STEP_CLIENT, text: "Clients round, guess, and sometimes fib. The database doesn't."},
+			{type: STEP_CLIENT, text: "And if the honest numbers say no — the answer is no."},
+			{type: STEP_CLIENT, text: "Cheat sheet's on handbook pages 33–35. Go get 'em."}
 		];
 	}
 
@@ -340,20 +353,39 @@ class ClientScenarios
 	{
 		return [
 			{type: STEP_PLAYER, text: "This ID isn't yours."},
-			{type: STEP_CLIENT, text: "...Look, can we not do this here?"},
-			{type: STEP_PLAYER, text: "The name and photo don't match you."},
-			{type: STEP_CLIENT, text: "Fine. Just... give me my documents back."},
+			{type: STEP_CLIENT, text: "It's... a very old photo."},
+			{type: STEP_PLAYER, text: "It's a different person. Named Peter."},
+			{type: STEP_CLIENT, text: "...Okay. Okay! Can we not do this here?"},
+			{type: STEP_CLIENT, text: "Just give me the documents back. I'm leaving."},
 			{type: STEP_CHOICES, text: ""}
 		];
 	}
 
-	public static function kethranSalaryCompleteSteps():Array<ClientConvStep>
+	public static function salaryCompleteSteps(scenario:ClientScenario):Array<ClientConvStep>
 	{
+		if (scenario != null && scenario.expectedAmount > 0)
+		{
+			return [
+				{type: STEP_CLIENT, text: "That's the number! I officially earn money."},
+				{type: STEP_CLIENT, text: "So — about that 40,000 LOR loan?"},
+				{type: STEP_CHOICES, text: ""}
+			];
+		}
+
 		return [
 			{type: STEP_CLIENT, text: "Annual salary looks right now — thanks."},
 			{type: STEP_CLIENT, text: "Could I have my documents back when you're done?"},
 			{type: STEP_CHOICES, text: ""}
 		];
+	}
+
+	/** Lines for a client whose honest application the bank just declined. */
+	public static function honestDeclineMessagesFor(scenario:ClientScenario):Array<String>
+	{
+		var lines = CitizenVisitBuilder.stringArrayField(citizenDialogue(scenario.citizenIndex), "decline");
+		if (lines.length > 0)
+			return lines;
+		return ["Not affordable, huh?", "...Probably for the best.", "Can I have my ID back?"];
 	}
 
 	public static function smallTalkChoiceLabelFor(scenario:ClientScenario):Null<String>
@@ -381,10 +413,29 @@ class ClientScenarios
 	public static function chefTutorialIntroBaseSteps():Array<ClientConvStep>
 	{
 		return [
-			{type: STEP_CLIENT, text: "Hey, I'm your new manager. Folks call me Chef."},
-			{type: STEP_CLIENT, text: "First day on the floor — wanted to see how you're doing."},
-			{type: STEP_PLAYER_PROMPT, text: "Nice to meet you"},
-			{type: STEP_CLIENT, text: "Just to make sure you remember your job, I'll coach you a bit."}
+			{type: STEP_CLIENT, text: "Ah, the new hire! I'm your manager. Everyone calls me Chef."},
+			{type: STEP_CLIENT, text: "Not because I cook. Long story. Involves a microwave."},
+			{
+				type: STEP_TUTORIAL_CHOICES,
+				text: "",
+				choices: ["Nice to meet you, Chef!", "I've done this before."],
+				altSteps: chefTutorialSkipSteps()
+			},
+			{type: STEP_CLIENT, text: "Today, I'm your first client. Two problems."},
+			{type: STEP_CLIENT, text: "One: Payroll zeroed my salary in the system. Again."},
+			{type: STEP_CLIENT, text: "Two: I want a loan for my dream — a food truck. 'Chef's Kiss'."},
+			{type: STEP_CLIENT, text: "Fix my record, process my loan, and you're certified. Let's go!"}
+		];
+	}
+
+	static function chefTutorialSkipSteps():Array<ClientConvStep>
+	{
+		return [
+			{type: STEP_CLIENT, text: "A veteran, huh? I like the confidence."},
+			{type: STEP_CLIENT, text: "Handbook pages 33–35 if you get stuck. Pages 92–94 for currency math."},
+			{type: STEP_CLIENT, text: "And remember: if the honest numbers say no, the answer is no."},
+			{type: STEP_SKIP_TUTORIAL, text: ""},
+			{type: STEP_END_VISIT, text: ""}
 		];
 	}
 
@@ -401,7 +452,7 @@ class ClientScenarios
 
 		if (!ctx.salaryUpdated)
 		{
-			steps.push({type: STEP_CLIENT, text: "Salary shows zero. Fix it to 42,000 LOR."});
+			steps.push({type: STEP_CLIENT, text: "Salary still shows zero. Make it 42,000 LOR, please."});
 			return steps;
 		}
 
@@ -426,7 +477,7 @@ class ClientScenarios
 		if (ackSalary)
 		{
 			return [
-				{type: STEP_CLIENT, text: "Salary's corrected — good."},
+				{type: STEP_CLIENT, text: "42,000. Payroll owes me an apology."},
 				{type: STEP_CLIENT, text: "Now hit Print on my record."},
 				{type: STEP_TUTORIAL_IDLE, text: ""}
 			];
@@ -441,7 +492,7 @@ class ClientScenarios
 	public static function chefTutorialGuideBookSteps():Array<ClientConvStep>
 	{
 		return [
-			{type: STEP_CLIENT, text: "For things like that, we have our beloved guide book."},
+			{type: STEP_CLIENT, text: "For the rest, we ask the client. Politely. From the official book."},
 			{type: STEP_TUTORIAL_IDLE, text: ""}
 		];
 	}
@@ -610,13 +661,13 @@ class ClientScenarios
 				[
 					{type: STEP_PLAYER, text: playerLine(actionId)},
 					{type: STEP_CLIENT, text: "Forty thousand LOR. Personal."},
-					{type: STEP_CLIENT, text: "Can we please move faster?"},
+					{type: STEP_CLIENT, text: "I said that already. Can we move faster?"},
 					{type: STEP_CHOICES, text: ""}
 				];
 			case "loan_purpose":
 				[
 					{type: STEP_PLAYER, text: playerLine(actionId)},
-					{type: STEP_CLIENT, text: "Personal expenses. Look, just process it."},
+					{type: STEP_CLIENT, text: "Personal... things. Look, just process it."},
 					{type: STEP_CHOICES, text: ""}
 				];
 			case "loan_security":
@@ -628,7 +679,7 @@ class ClientScenarios
 			case "annual_salary":
 				[
 					{type: STEP_PLAYER, text: playerLine(actionId)},
-					{type: STEP_CLIENT, text: "Check your database — I'm in a rush."},
+					{type: STEP_CLIENT, text: "Uh. A normal amount? Check your database."},
 					{type: STEP_CHOICES, text: ""}
 				];
 			case "monthly_salary":
@@ -640,7 +691,7 @@ class ClientScenarios
 			case "living_expenses":
 				[
 					{type: STEP_PLAYER, text: playerLine(actionId)},
-					{type: STEP_CLIENT, text: "Normal stuff. Can we finish this?"},
+					{type: STEP_CLIENT, text: "Rent. Food. Hats. Normal stuff. Can we finish?"},
 					{type: STEP_CHOICES, text: ""}
 				];
 			case "comfortable_rate":
@@ -660,22 +711,22 @@ class ClientScenarios
 		{
 			case "verify_client_details":
 				[
-					{type: STEP_PLAYER, text: "Alright, I can see that the salary is looking correct now, great."},
-					{type: STEP_CLIENT, text: "Great!"},
-					{type: STEP_CLIENT, text: "Now we gonna walk through the loan application."},
+					{type: STEP_PLAYER, text: "Record checks out — salary's 42,000 now."},
+					{type: STEP_CLIENT, text: "Paper and screen agree. Beautiful."},
+					{type: STEP_CLIENT, text: "Now the fun part: my food truck loan."},
 					{type: STEP_TUTORIAL_IDLE, text: ""}
 				];
 			case "borrow_amount":
 				chefTutorialLoanQuestionSteps(actionId,
 					'I think I already told you — it\'s ${LoanAffordabilityCalculator.formatLorDisplay(ChefTutorial.LOAN_TARGET_AMOUNT)} LOR.');
 			case "loan_purpose":
-				chefTutorialLoanQuestionSteps(actionId, "Personal — same as on the application.");
+				chefTutorialLoanQuestionSteps(actionId, "A food truck! Tacos by day, crepes by night.");
 			case "loan_security":
-				chefTutorialLoanQuestionSteps(actionId, "Not secured, please.");
+				chefTutorialLoanQuestionSteps(actionId, "Not secured, please. I'm not betting the truck on it.");
 			case "living_expenses":
-				chefTutorialLoanQuestionSteps(actionId, "About 700 for housing, 400 living, and 150 other.");
+				chefTutorialLoanQuestionSteps(actionId, "700 housing, 400 living, 150 other. Mostly hot sauce.");
 			case "comfortable_rate":
-				chefTutorialLoanQuestionSteps(actionId, "Around 1,200 LOR a month.");
+				chefTutorialLoanQuestionSteps(actionId, "Around 1,200 LOR a month. Any more and I'm eating my own stock.");
 			case "annual_salary":
 				chefTutorialLoanQuestionSteps(actionId, "42,000 LOR — you just fixed that for me.");
 			case "monthly_salary":
@@ -724,8 +775,8 @@ class ClientScenarios
 	public static function chefTutorialFolderIntroSteps():Array<ClientConvStep>
 	{
 		return [
-			{type: STEP_CLIENT, text: "Okay, this is the folder where you have to submit all documents related to the loan."},
-			{type: STEP_CLIENT, text: "For that you will need proof of my identity — there you go."},
+			{type: STEP_CLIENT, text: "Behold, the loan folder. Every loan gets one. Paperwork is love."},
+			{type: STEP_CLIENT, text: "It needs proof of who I am — here's my ID."},
 			{type: STEP_ID_HANDOFF, text: ""},
 			{type: STEP_TUTORIAL_IDLE, text: ""}
 		];
@@ -734,8 +785,8 @@ class ClientScenarios
 	public static function chefTutorialFolderCompletionSteps():Array<ClientConvStep>
 	{
 		return [
-			{type: STEP_CLIENT, text: "That's it! Nice work."},
-			{type: STEP_CLIENT, text: "Give me my ID back — drop it on my side of the window."},
+			{type: STEP_CLIENT, text: "APPROVED! The Chef's Kiss rolls out next month!"},
+			{type: STEP_CLIENT, text: "Last thing: my ID back. Drop it on my side of the window."},
 			{type: STEP_PREPARE_TUTORIAL_EXIT, text: ""},
 			{type: STEP_TUTORIAL_IDLE, text: ""}
 		];
@@ -743,28 +794,26 @@ class ClientScenarios
 
 	static function chefTutorialLoanOverviewSteps():Array<ClientConvStep>
 	{
-		return [
-			{type: STEP_CLIENT, text: "Good — you've got the tools. Here's the real loan process."},
-			{type: STEP_CLIENT, text: "Step 1 — Intake. Listen. They hand over their ID. Note the amount they want."},
-			{type: STEP_CLIENT, text: "Step 2 — Gather. Scan questions from pages 31–32. Write every number down."},
-			{type: STEP_CLIENT, text: "Step 3 — Terminal. Computer → Loan Application → New Application."},
-			{type: STEP_CLIENT, text: "Fill every field. Monthly salary = annual ÷ 12. Verdict must be green Affordable."},
-			{type: STEP_CLIENT, text: "Hit SUBMIT. A loan folder slides onto your desk."},
-			{type: STEP_CLIENT, text: "Step 4 — Folder. Print copies of ID, application form, and checklist."},
-			{type: STEP_CLIENT, text: "Drag copies into the folder — not originals. Three items total."},
-			{type: STEP_CLIENT, text: "Step 5 — Submit for Approval from the terminal when the folder is complete."},
-			{type: STEP_CLIENT, text: "Foreign pay? Open Currency Exchange. Divide the foreign amount by the rate to get LOR."},
-			{type: STEP_CLIENT, text: "Example: 68.42 KTH = 1 LOR. So 185,000 KTH ÷ 68.42 ≈ 2,700 LOR a month."},
-			{type: STEP_CLIENT, text: "Annual salary in LOR = monthly × 12. Handbook pages 33–35 have a cheat sheet."},
-			{type: STEP_CLIENT, text: "Your first real client should be here soon. Read pages 33–35 before they arrive."}
-		];
+		return chefTutorialSendOffSteps();
 	}
 
 	static function confirmNameSteps(?scenario:ClientScenario):Array<ClientConvStep>
 	{
 		var name = "…";
-		if (scenario != null && scenario.citizenIndex >= 0 && scenario.citizenIndex < CitizenRegistry.all.length)
-			name = CitizenRegistry.displayName(CitizenRegistry.all[scenario.citizenIndex]);
+		var nameIndex = scenario != null && scenario.idCardCitizenIndex >= 0 ? scenario.idCardCitizenIndex
+			: (scenario != null ? scenario.citizenIndex : -1);
+		if (nameIndex >= 0 && nameIndex < CitizenRegistry.all.length)
+			name = CitizenRegistry.displayName(CitizenRegistry.all[nameIndex]);
+
+		if (scenario != null && scenario.identityFraud)
+		{
+			return [
+				{type: STEP_PLAYER, text: BookScanActions.confirmNameQuestion(name)},
+				{type: STEP_CLIENT, text: "Yes. Peter. Obviously."},
+				{type: STEP_CLIENT, text: "...Pete, to my friends."},
+				{type: STEP_CHOICES, text: ""}
+			];
+		}
 
 		return [
 			{type: STEP_PLAYER, text: BookScanActions.confirmNameQuestion(name)},
@@ -803,7 +852,7 @@ class ClientScenarios
 				case "loan_purpose": "Personal — check the application.";
 				case "loan_security": "Not secured.";
 				case "living_expenses": "700 housing, 400 living, 150 other.";
-				case "comfortable_rate": "About 1,600 LOR a month.";
+				case "comfortable_rate": "About 1,200 LOR a month.";
 				case "annual_salary": "42,000 LOR — check the system.";
 				case "monthly_salary": "Annual divided by twelve.";
 				case "passport_request": "No passport needed — we're just practicing the application.";
@@ -893,8 +942,11 @@ class ClientScenarios
 				}
 				else
 				{
+					var line = CitizenVisitBuilder.stringField(dialogue, "loan_security_line");
 					var security = CitizenVisitBuilder.stringField(dialogue, "loan_security");
-					bookScanReply(actionId, security == "secured" ? "Secured, please." : "Unsecured, please.");
+					if (line == null)
+						line = security == "secured" ? "Secured, please." : "Unsecured, please.";
+					bookScanReply(actionId, line);
 				}
 			case "living_expenses":
 				livingExpenseSteps(actionId, CitizenVisitBuilder.stringArrayField(dialogue, "living_expenses"));

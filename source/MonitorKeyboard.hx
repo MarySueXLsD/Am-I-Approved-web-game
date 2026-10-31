@@ -7,6 +7,7 @@ class MonitorKeyboard
 {
 	public static function typedCharacter(e:KeyboardEvent):Null<String>
 	{
+		Juice.keyClick();
 		if (e.keyCode == Keyboard.BACKSPACE || e.keyCode == Keyboard.ESCAPE || e.keyCode == Keyboard.ENTER)
 			return null;
 

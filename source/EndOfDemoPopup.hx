@@ -85,7 +85,44 @@ class EndOfDemoPopup extends MainMenuSlidePopup
 
 	override function onBeforeShow():Void
 	{
+		// Stats change every shift, so rebuild the report each time it opens.
+		layoutPopup();
 		resetHover();
+	}
+
+	override function finishOpen():Void
+	{
+		super.finishOpen();
+		var grade = ShiftStats.grade();
+		var color = switch (grade.charAt(0))
+		{
+			case "A": Juice.GREEN;
+			case "B": Juice.GOLD;
+			default: Juice.RED;
+		};
+		Juice.sfx(Juice.SFX_FANFARE, 0.9);
+		Juice.stamp(grade, color, panelX(panelW - 70), panelY(panelH * 0.42));
+	}
+
+	static function reportText():String
+	{
+		var lines = [
+			"END OF SHIFT — PERFORMANCE REVIEW",
+			"",
+			"Clients served: " + ShiftStats.clientsServed,
+			"Loans approved: " + ShiftStats.loansApproved + "  (" + LoanAffordabilityCalculator.formatLorDisplay(ShiftStats.lorGranted) + " LOR)",
+			"Honest declines: " + ShiftStats.correctDeclines,
+			"Fraud caught: " + ShiftStats.fraudCaught,
+			"Records fixed: " + ShiftStats.recordsFixed,
+			"Applications bounced: " + ShiftStats.rejectedSubmissions,
+			"Shift time: " + ShiftStats.formatDuration(),
+			"",
+			"Score: " + ShiftStats.score() + "    Grade: " + ShiftStats.grade(),
+			ShiftStats.gradeComment(),
+			"",
+			"That's the end of the demo — thanks for playing!"
+		];
+		return lines.join("\n");
 	}
 
 	override function onClosed():Void
@@ -122,10 +159,10 @@ class EndOfDemoPopup extends MainMenuSlidePopup
 		var h = FlxG.height;
 		popupPad = Std.int(Math.max(16, w * 0.03));
 		popupFontSize = Std.int(Math.max(14, h / 38));
-		panelW = Std.int(Math.min(w - 48, 460));
+		panelW = Std.int(Math.min(w - 48, 520));
 		popupBtnH = popupFontSize + 12;
 		popupBtnW = Std.int(Math.max(120, panelW * 0.4));
-		panelH = Std.int(Math.min(h - 48, popupPad * 2 + popupFontSize * 5 + popupBtnH + 24));
+		panelH = Std.int(Math.min(h - 48, popupPad * 2 + popupFontSize * 19 + popupBtnH + 24));
 		restX = (w - panelW) * 0.5;
 		restY = (h - panelH) * 0.5;
 		popupBtnY = panelH - popupPad - popupBtnH;
@@ -134,8 +171,8 @@ class EndOfDemoPopup extends MainMenuSlidePopup
 		drawBorder(panel, Std.int(panelW), Std.int(panelH), BORDER_COLOR, 2);
 		panel.updateHitbox();
 
-		messageLabel.text = "Thanks for playing!\n\nFor now, that's it.";
-		messageLabel.setFormat(null, popupFontSize, LABEL_COLOR, "center");
+		messageLabel.text = reportText();
+		messageLabel.setFormat(null, popupFontSize, LABEL_COLOR, "left");
 		messageLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(40, 28, 16), Math.max(1, popupFontSize / 14));
 		messageLabel.fieldWidth = Std.int(panelW - popupPad * 2);
 		messageLabel.wordWrap = true;
@@ -153,6 +190,7 @@ class EndOfDemoPopup extends MainMenuSlidePopup
 	override function syncPopupLayout():Void
 	{
 		super.syncPopupLayout();
+		panel.setPosition(panelX(0), panelY(0));
 		messageLabel.setPosition(panelX(popupPad), panelY(popupPad + 8));
 		syncOkButtonLayout();
 	}

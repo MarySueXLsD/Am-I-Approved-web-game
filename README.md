@@ -19,6 +19,9 @@ Clients arrive at your desk with stories, passports, and paperwork that does not
 - Client dialogue and scenarios with dry, workplace humor
 - Document inspection and comparison — passports, IDs, contracts, and more
 - Retro bank terminal with citizen search, loan applications, and calculators
+- Seven distinct day-one cases: yearly bills, a mind-changing car buyer, wishful salaries, an honest decline, foreign-currency payslips, and a stolen ID
+- Chef's hands-on training with a lesson tracker (or skip it if you've done this before)
+- Stamps, coin showers, and an end-of-shift performance review with a grade
 - Tutorial and employee handbook to walk you through day one
 - A fully stocked desk: printer, shredder, calculator, loan folder, magnifying glass, and too much paperwork
 

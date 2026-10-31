@@ -16,5 +16,6 @@
 	<haxedef name="FLX_NO_DEBUG" />
 
 	<assets path="assets" if="desktop || mobile" />
-	<assets path="static" />
+	<!-- Unused source/debug files are kept in the repo but not shipped (the ambience flac alone is 28 MB). -->
+	<assets path="static" exclude="Office_Ambience_143sec.flac|blah-blah.wav|Scanner_Working_5sec.wav|_scan_debug|cover_kethran_passport.png|employers_table2.png|empty_kethran_job_contract.png" />
 </project>
