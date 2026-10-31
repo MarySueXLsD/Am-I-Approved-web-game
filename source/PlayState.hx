@@ -97,6 +97,8 @@ class PlayState extends FlxState
 	var gameplayMusic:GameplayMusic;
 	var shiftPauseOverlay:ShiftPauseOverlay;
 	var endOfDemoPopup:EndOfDemoPopup;
+	var juice:Juice;
+	var trainingHud:TrainingProgressHud;
 	var screenFadeOverlay:ScreenFadeOverlay;
 	var scanModeOverlay:ScanModeOverlay;
 	var deskTutorialCoach:TutorialGuideOverlay;
@@ -444,6 +446,12 @@ class PlayState extends FlxState
 				beginChefTutorialIdReturn();
 		};
 
+		clientDialog.onSkipTutorial = function()
+		{
+			if (chefTutorial != null)
+				chefTutorial.shouldAdvanceOnVisitComplete = true;
+		};
+
 		clientDialog.onTutorialIntroSteps = function()
 		{
 			if (chefTutorial == null || CitizenRegistry.all.length <= ChefTutorial.CITIZEN_INDEX)
@@ -494,6 +502,9 @@ class PlayState extends FlxState
 			else if (chefTutorial.shouldCompleteFolderIntro())
 				chefTutorial.onFolderIntroDialogComplete();
 		};
+
+		trainingHud = new TrainingProgressHud(zones.leftW + (FlxG.width - zones.leftW) * 0.5, 8);
+		add(trainingHud);
 
 		deskTutorialCoach = new TutorialGuideOverlay();
 		add(deskTutorialCoach);
@@ -577,6 +588,11 @@ class PlayState extends FlxState
 			{
 				fraudConfronted = true;
 				pendingDocumentReturn = true;
+				ShiftStats.fraudCaught++;
+				Juice.sfx(Juice.SFX_ALARM, 0.9);
+				Juice.stamp("FRAUD", Juice.RED, -1, -1, "Nice catch.");
+				Juice.flash(Juice.RED, 0.3, 0.25);
+				jitterClient();
 				clientDialog.startScriptedConversation(ClientScenarios.fraudConfrontationSteps(), true);
 			}
 			else if (actionId == "compare_id_photo" || actionId == "compare_id_passport")
@@ -599,6 +615,9 @@ class PlayState extends FlxState
 		};
 		scanModeOverlay.getCitizenDisplayName = function() return clientDialog.getCitizenDisplayName();
 		add(scanModeOverlay);
+
+		juice = new Juice();
+		add(juice);
 
 		studioLogoSplash = new StudioLogoSplash();
 		add(studioLogoSplash);
@@ -623,6 +642,10 @@ class PlayState extends FlxState
 	{
 		scanSelectionConsumed = false;
 		ScanModeOverlay.suppressDocumentPress = false;
+		ShiftStats.tick(elapsed);
+		#if debug
+		updateDebugJuiceKeys();
+		#end
 		updateClientEntrance(elapsed);
 		syncCalculatorZone();
 		syncPrinterPauseForMonitor();
@@ -1428,7 +1451,9 @@ class PlayState extends FlxState
 		applyClientPortrait(citizen);
 		passport.setCitizen(citizen);
 		setCitizenOnClientDocuments(citizen);
-		clientDialog.setCitizenName(citizen.firstName + " " + citizen.lastName);
+		// A fraudster introduces themselves with whatever name is on the stolen ID.
+		var claimed = idCardCitizenForScenario(citizen);
+		clientDialog.setCitizenName(claimed.firstName + " " + claimed.lastName);
 	}
 
 	function idCardCitizenForScenario(citizen:Citizen):Citizen
@@ -1581,8 +1606,16 @@ class PlayState extends FlxState
 			return;
 
 		salaryUpdateAcknowledged = true;
-		pendingDocumentReturn = true;
-		clientDialog.startScriptedConversation(ClientScenarios.kethranSalaryCompleteSteps(), true);
+		var loanFollows = currentScenario.expectedAmount > 0;
+		if (!loanFollows)
+		{
+			pendingDocumentReturn = true;
+			ShiftStats.recordsFixed++;
+		}
+		Juice.sfx(Juice.SFX_SUCCESS, 0.8);
+		Juice.popText(zones.leftW * 0.5, zones.clientH * 0.55, "RECORD FIXED!", Juice.GREEN, 22);
+		hopClient();
+		clientDialog.startScriptedConversation(ClientScenarios.salaryCompleteSteps(currentScenario), true);
 	}
 
 	function applyClientScenario():Void
@@ -1596,6 +1629,7 @@ class PlayState extends FlxState
 			citizenIdx = 0;
 
 		chefTutorial = currentScenario.isTutorial ? new ChefTutorial() : null;
+		ShiftStats.running = !currentScenario.isTutorial;
 		chefTutorialPaperWasReady = false;
 		resetScenarioVisitState();
 
@@ -1765,7 +1799,7 @@ class PlayState extends FlxState
 	{
 		var idCitizen = idCardCitizenForScenario(citizen);
 		var idPortraitPath = currentScenario != null
-			? currentScenario.portraitPath
+			? (currentScenario.idPortraitPath != null ? currentScenario.idPortraitPath : currentScenario.portraitPath)
 			: ClientPortraits.pathForClientSlot(currentClientIndex);
 		for (idDoc in idDocuments)
 			idDoc.setCitizen(idCitizen, idPortraitPath);
@@ -1887,6 +1921,16 @@ class PlayState extends FlxState
 
 	function initialClientIndex():Int
 	{
+		#if (debug && html5)
+		// Debug builds only: ?client=N jumps straight to a client for testing.
+		var match = ~/[?&]client=(\d+)/;
+		if (match.match(js.Browser.location.search))
+		{
+			var idx = Std.parseInt(match.matched(1));
+			if (idx != null && idx >= 0 && idx < ClientScenarios.count())
+				return idx;
+		}
+		#end
 		return 0;
 	}
 
@@ -1941,6 +1985,7 @@ class PlayState extends FlxState
 		clientEntranceDelayRemaining = 0;
 
 		GameClock.reset();
+		ShiftStats.reset();
 		clientDialog.resetForNewDay();
 		currentClientIndex = initialClientIndex();
 		chefTutorial = null;
@@ -2834,6 +2879,8 @@ class PlayState extends FlxState
 
 	function startClientDeparture():Void
 	{
+		if (currentScenario != null && !currentScenario.isTutorial)
+			ShiftStats.clientsServed++;
 		returnStrandedDocsFromClientWindow();
 		clientAnimPhase = 3;
 		clientAnimTimer = 0;
@@ -2874,6 +2921,7 @@ class PlayState extends FlxState
 		}
 
 		var leavingTutorial = currentScenario != null && currentScenario.isTutorial;
+		ShiftStats.running = true;
 		currentClientIndex++;
 		if (currentClientIndex >= ClientScenarios.count())
 			currentClientIndex = ClientScenarios.count() - 1;
@@ -2885,6 +2933,9 @@ class PlayState extends FlxState
 		{
 			monitor.resetScreen();
 			monitor.hide();
+			// Skipping Chef's training leaves the guide book stashed — every clerk needs one.
+			if (!bookDocument.visible)
+				ensureGuideBookOnClientTable();
 		}
 		clientDialog.suppressAutoDocumentDelivery();
 
@@ -3196,6 +3247,8 @@ class PlayState extends FlxState
 
 	function clearTutorialUiRestrictions():Void
 	{
+		if (trainingHud != null)
+			trainingHud.hide();
 		if (deskTutorialCoach != null)
 			deskTutorialCoach.hide();
 		if (monitorTutorialCoach != null)
@@ -3217,6 +3270,14 @@ class PlayState extends FlxState
 			clearTutorialUiRestrictions();
 			return;
 		}
+
+		if (clientAnimPhase == 0 && !chefTutorial.shouldAdvanceOnVisitComplete)
+		{
+			trainingHud.show();
+			trainingHud.setLesson(chefTutorial.lessonIndex());
+		}
+		if (trainingHud.isShown())
+			trainingHud.visible = !monitor.isActive();
 
 		if (chefTutorial.consumePendingMonitorClose())
 			monitor.hide();
@@ -3539,6 +3600,11 @@ class PlayState extends FlxState
 		if (chefTutorial != null && chefTutorial.shouldStartFolderFarewell())
 		{
 			chefTutorial.onFolderTutorialSubmitComplete();
+			trainingHud.complete();
+			Juice.sfx(Juice.SFX_FANFARE, 0.9);
+			Juice.stamp("CERTIFIED", Juice.GOLD, -1, -1, "Welcome to the bank.");
+			Juice.coinShower(zones.leftW * 0.5, zones.clientH * 0.5, 30);
+			hopClient();
 			if (clientDialog.canAcceptFollowUp())
 				clientDialog.startScriptedConversation(ClientScenarios.chefTutorialFolderCompletionSteps(), true);
 			return;
@@ -3588,13 +3654,108 @@ class PlayState extends FlxState
 		pendingLoanReview = review;
 		spawnLoanDecisionDocument(review, loanId);
 
+		var clientX = zones.leftW * 0.5;
+		var clientY = zones.clientH * 0.5;
+
 		if (review.approved)
 		{
+			ShiftStats.loansApproved++;
+			ShiftStats.lorGranted += currentScenario.expectedAmount;
+			Juice.stamp("APPROVED", Juice.GREEN);
+			Juice.coinShower(clientX, clientY, 24);
+			Juice.popText(clientX, clientY + 50, "+" + LoanAffordabilityCalculator.formatLorDisplay(currentScenario.expectedAmount) + " LOR",
+				Juice.GOLD, 20);
+			hopClient();
 			pendingClientAdvance = true;
 			if (currentScenario != null && currentScenario.requiresDocumentReturn)
 				pendingDocumentReturn = true;
 			clientDialog.startThanksDialog();
+			return;
 		}
+
+		if (currentScenario.expectDecline && LoanApplicationValidator.isHonestDecline(review))
+		{
+			ShiftStats.correctDeclines++;
+			Juice.stamp("DECLINED", Juice.RED, -1, -1, "The right call.");
+			new flixel.util.FlxTimer().start(0.5, function(_) Juice.sfx(Juice.SFX_SUCCESS, 0.6));
+			pendingClientAdvance = true;
+			pendingDocumentReturn = true;
+			clientDialog.startClosingDialog(ClientScenarios.honestDeclineMessagesFor(currentScenario));
+			return;
+		}
+
+		ShiftStats.rejectedSubmissions++;
+		Juice.sfx(Juice.SFX_ERROR, 0.9);
+		Juice.stamp("RETURNED", 0xFFE08A3A, -1, -1, "Check the error sheet.");
+	}
+
+	#if debug
+	/** Debug builds only: preview each outcome effect without playing a full case. */
+	function updateDebugJuiceKeys():Void
+	{
+		var cx = zones.leftW * 0.5;
+		var cy = zones.clientH * 0.5;
+		if (FlxG.keys.justPressed.F6)
+		{
+			Juice.stamp("APPROVED", Juice.GREEN);
+			Juice.coinShower(cx, cy, 24);
+			Juice.popText(cx, cy + 50, "+35,000 LOR", Juice.GOLD, 20);
+			hopClient();
+		}
+		else if (FlxG.keys.justPressed.F7)
+			Juice.stamp("DECLINED", Juice.RED, -1, -1, "The right call.");
+		else if (FlxG.keys.justPressed.F8)
+		{
+			Juice.sfx(Juice.SFX_ALARM, 0.9);
+			Juice.stamp("FRAUD", Juice.RED, -1, -1, "Nice catch.");
+			Juice.flash(Juice.RED, 0.3, 0.25);
+			jitterClient();
+		}
+		else if (FlxG.keys.justPressed.F9)
+		{
+			Juice.sfx(Juice.SFX_ERROR, 0.9);
+			Juice.stamp("RETURNED", 0xFFE08A3A, -1, -1, "Check the error sheet.");
+		}
+		else if (FlxG.keys.justPressed.F10)
+		{
+			ShiftStats.clientsServed = 7;
+			ShiftStats.loansApproved = 4;
+			ShiftStats.lorGranted = 140000;
+			ShiftStats.correctDeclines = 1;
+			ShiftStats.fraudCaught = 1;
+			ShiftStats.recordsFixed = 1;
+			ShiftStats.rejectedSubmissions = 2;
+			showEndOfDemoPopup();
+		}
+		else if (FlxG.keys.justPressed.F11)
+		{
+			trainingHud.show();
+			trainingHud.setLesson(trainingHud.isShown() ? 3 : 0);
+		}
+	}
+	#end
+
+	/** Happy little jump — approvals and fixed records. */
+	function hopClient():Void
+	{
+		if (clientAnimPhase != 0)
+			return;
+		FlxTween.cancelTweensOf(clientImg, ["y"]);
+		clientImg.y = clientFinalY;
+		FlxTween.tween(clientImg, {y: clientFinalY - 22}, 0.14, {
+			ease: FlxEase.quadOut,
+			onComplete: function(_) FlxTween.tween(clientImg, {y: clientFinalY}, 0.32, {ease: FlxEase.bounceOut})
+		});
+	}
+
+	/** Nervous shake — caught red-handed. */
+	function jitterClient():Void
+	{
+		if (clientAnimPhase != 0)
+			return;
+		FlxTween.cancelTweensOf(clientImg, ["x"]);
+		clientImg.x = clientFinalX;
+		FlxTween.shake(clientImg, 0.03, 0.5, flixel.util.FlxAxes.X, {onComplete: function(_) clientImg.x = clientFinalX});
 	}
 
 	function spawnLoanDecisionDocument(review:LoanReviewResult, ?loanId:String):Void

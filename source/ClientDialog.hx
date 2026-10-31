@@ -53,6 +53,7 @@ class ClientDialog extends FlxGroup
 	static inline var STEP_UNLOCK_SCAN_HINT:Int = 6;
 	static inline var STEP_END_VISIT:Int = 7;
 	static inline var STEP_TUTORIAL_CHOICES:Int = 8;
+	static inline var STEP_SKIP_TUTORIAL:Int = 11;
 	static inline var STEP_PREPARE_TUTORIAL_EXIT:Int = 9;
 	static inline var STEP_ID_HANDOFF:Int = 10;
 
@@ -140,6 +141,7 @@ class ClientDialog extends FlxGroup
 	public var onAutoDocumentsRequest:Void->Void;
 	public var onVisitComplete:Void->Void;
 	public var onPrepareTutorialExit:Void->Void;
+	public var onSkipTutorial:Void->Void;
 	public var onScanRequest:Void->Void;
 	public var onScanDismiss:Void->Void;
 	public var isScanHintAllowed:Null<Void->Bool> = null;
@@ -326,6 +328,12 @@ class ClientDialog extends FlxGroup
 	{
 		closingDialog = true;
 		var msgs = scenario != null ? scenario.thanksMessages() : ["Thanks.", "Goodbye."];
+		startDialog(msgs);
+	}
+
+	public function startClosingDialog(msgs:Array<String>):Void
+	{
+		closingDialog = true;
 		startDialog(msgs);
 	}
 
@@ -1378,6 +1386,10 @@ class ClientDialog extends FlxGroup
 			case STEP_ID_HANDOFF:
 				if (onIdHandoffRequest != null)
 					onIdHandoffRequest();
+				executeNextStep();
+			case STEP_SKIP_TUTORIAL:
+				if (onSkipTutorial != null)
+					onSkipTutorial();
 				executeNextStep();
 			default:
 				enterDone();

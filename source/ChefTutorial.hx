@@ -101,7 +101,35 @@ class ChefTutorial
 	var loanPrepShredDone = false;
 	var loanWalkthroughReady = false;
 
+	public static var LESSON_NAMES:Array<String> = [
+		"Meet Chef",
+		"Fix a record",
+		"Print & verify",
+		"Start the loan",
+		"Ask the client",
+		"Find the right term",
+		"File the folder"
+	];
+
 	public function new() {}
+
+	/** Which training lesson the current guide phase belongs to (index into LESSON_NAMES). */
+	public function lessonIndex():Int
+	{
+		if (guidePhase == GUIDE_NONE)
+			return 0;
+		if (guidePhase <= GUIDE_MONITOR_PRINT)
+			return 1;
+		if (guidePhase <= GUIDE_SCAN_PRINTED)
+			return 2;
+		if (guidePhase <= GUIDE_LOAN_SALARY)
+			return 3;
+		if (guidePhase <= GUIDE_LOAN_EXPENSES)
+			return 4;
+		if (guidePhase <= GUIDE_LOAN_SUBMIT)
+			return 5;
+		return 6;
+	}
 
 	public static function managerDisplayName():String
 	{
@@ -616,8 +644,8 @@ class ChefTutorial
 
 		guideShownForPhase = GUIDE_MONITOR_WELCOME;
 		monitorCoach.showCoach(
-			'Everything on the desk pauses while you are in here.\n\n'
-				+ 'To leave the terminal, just click outside the monitor.',
+			'Welcome to the terminal. Time politely stops while you\'re in here.\n\n'
+				+ 'To leave, just click outside the monitor.',
 			null,
 			true,
 			function()
@@ -665,14 +693,14 @@ class ChefTutorial
 
 	public static function unneededFieldEditCoachText():String
 	{
-		return "No — it's better not to mess with a customer's data.\n"
+		return "Whoa — hands off! Clients get very attached to their data.\n"
 			+ "The only change you need is " + managerDisplayName() + "'s Annual Salary — set it to "
 			+ TARGET_SALARY + " LOR.";
 	}
 
 	public static function wrongCustomerCoachText():String
 	{
-		return "Oh, I don't think that's me.\n\nPress BACK to return to the client database.";
+		return "That's not me. I'm much more handsome.\n\nPress BACK to return to the client database.";
 	}
 
 	public function isWrongClientActive():Bool
@@ -821,7 +849,7 @@ class ChefTutorial
 				if (ctx.draggingPrintedRecord)
 				{
 					deskCoach.showCoach(
-						'Drop the printed record on the employer desk on the right side.',
+						'Drop it on YOUR desk — the big empty space on the right.',
 						null,
 						false,
 						null,
@@ -834,7 +862,7 @@ class ChefTutorial
 				{
 					guideShownForPhase = guidePhase;
 					deskCoach.showCoach(
-						'Drag the printed record from the client table to the employer desk on the right side.',
+						'Wrong table, rookie. Drag the printout over to your desk on the right.',
 						ctx.printedHighlight,
 						false,
 						null,
@@ -853,7 +881,7 @@ class ChefTutorial
 			else if (ctx.paperOnPrinter)
 			{
 				deskCoach.showCoach(
-					'Drag the printed record from the printer to your desk.',
+					'Hot off the press! Drag the printout from the printer onto your desk.',
 					null,
 					false,
 					null,
@@ -865,7 +893,7 @@ class ChefTutorial
 			else
 			{
 				deskCoach.showCoach(
-					'Pick up the printed record from the printer and place it on your desk.',
+					'Grab the printout from the printer and put it on your desk.',
 					null,
 					false,
 					null,
@@ -894,8 +922,8 @@ class ChefTutorial
 					{
 						guideShownForPhase = GUIDE_SCAN_PRINTED + 100;
 						deskCoach.showCoach(
-							'You do not need the printed client details anymore — drag them to the shredder.\n\n'
-								+ 'That is the small black machine along the bottom middle of your desk.',
+							'Confidential paper lying around? Not on my watch. Feed it to the shredder.\n\n'
+								+ 'The little black machine at the bottom of your desk. It\'s always hungry.',
 							ctx.shredderHighlight,
 							false,
 							null,
@@ -955,7 +983,7 @@ class ChefTutorial
 					var scanMsg = switch (scanHintSubStep)
 					{
 						case 3: 'Click the green confirm button — or press Enter.';
-						case 2: 'Now click my face to pair the scan.';
+						case 2: 'Now click my handsome face to pair the scan.';
 						case 1: 'Now click the printed record to pair the scan.';
 						default: 'Click the printed record and my face — order does not matter.';
 					}
@@ -976,8 +1004,8 @@ class ChefTutorial
 				{
 					guideShownForPhase = hintKey;
 					deskCoach.showCoach(
-						'Scan Mode links a document on your desk with your client and the guide book so you can ask structured questions.\n\n'
-							+ 'Enter Scan Mode by clicking Let me ask you..., pressing SPACE, or double-clicking anything on the desk.',
+						'Scan Mode is your detective kit: link a paper on your desk with the client and ask about it.\n\n'
+							+ 'Press SPACE, click "Let me ask you...", or double-click anything on the desk.',
 						null,
 						false,
 						null,
@@ -1119,31 +1147,31 @@ class ChefTutorial
 		return switch (folderGuideHintKey(ctx))
 		{
 			case 400:
-				'Wait for the scanner to finish copying my ID.';
+				'Patience. The scanner is doing its best.';
 			case 401:
-				'Drop my ID on the printer/scanner.';
+				'Drop my ID on the printer to copy it. Originals go back to the client!';
 			case 402:
-				'Pick up the ID copy from the printer.';
+				'Grab the fresh copy from the printer.';
 			case 403:
 				if (!ctx.chefIdOnClientTable)
 					'You need my ID on the client table first.';
 				else if (!ctx.printerCanAccept)
-					'The printer is busy — drag the document out of the printer tray to free it up, then scan my ID.';
+					'The printer tray is full — clear it out, then scan my ID.';
 				else
-					'Drag my ID to the scanner/printer on your desk.';
+					'Drag my ID onto the printer to scan a copy.';
 			case 415:
 				'Open the terminal → Loan Application → Print Application Form, then pick up the copy.';
 			case 410:
-				'Now that you have a copy of my ID and the loan application form, you also need the checklist of all documents.\n\n'
-					+ 'Go to the terminal and on the Loan Application screen click Print Checklist.';
+				'ID copy? Check. Application form? Check. Now the checklist — yes, a checklist for your checklist.\n\n'
+					+ 'Terminal → Loan Application → Print Checklist.';
 			case 425:
 				'Click the arrow on the bottom right of the folder to open it.';
 			case 430:
-				'Drag and drop all needed documents into the loan folder.';
+				'Feed the folder: drag all three documents in.';
 			case 450:
 				onMonitor
-					? 'Click Submit for Approval.'
-					: 'Go to the computer and submit the folder for approval.';
+					? 'Moment of truth. Click Submit for Approval.'
+					: 'Folder\'s full! Head to the computer and Submit for Approval.';
 			default:
 				'';
 		}
@@ -1247,9 +1275,8 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'As you remember we only have the annual salary we can base on, which is 42,000 LOR. '
-						+ 'To get monthly one - we have to do some math, go ahead and close the terminal '
-						+ 'by clicking outside of the monitor.',
+					'The form wants MONTHLY salary, but the database only knows my annual 42,000 LOR.\n\n'
+						+ 'Math time! Click outside the monitor to reach your calculator.',
 					ui.getTutorialHighlight("loan_declared_salary")
 				);
 			}
@@ -1274,7 +1301,7 @@ class ChefTutorial
 				{
 					guideShownForPhase = guidePhase + 1;
 					deskCoach.showCoach(
-						'Nice — 3,500 LOR a month. Click the computer and enter that as Monthly Salary.',
+						'3,500 a month — look at you, mathematician! Click the computer and enter it as Monthly Salary.',
 						computerHighlight,
 						false,
 						null,
@@ -1294,7 +1321,7 @@ class ChefTutorial
 				{
 					guideShownForPhase = guidePhase + 1;
 					deskCoach.showCoach(
-						'Nice — 3,500 LOR a month. Click the computer and enter that as Monthly Salary.',
+						'3,500 a month — look at you, mathematician! Click the computer and enter it as Monthly Salary.',
 						computerHighlight,
 						false,
 						null,
@@ -1311,8 +1338,8 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Your calculator is in the bottom-right corner of your desk.\n\n'
-						+ 'Use it to divide 42,000 by 12 — that gives you the monthly salary.',
+					'Your trusty calculator lives in the bottom-right corner.\n\n'
+						+ 'Divide 42,000 by 12. Twelve months in a year, last I checked.',
 					calculatorHighlight,
 					false,
 					null,
@@ -1362,15 +1389,13 @@ class ChefTutorial
 				var prepMsg = switch (guidePhase)
 				{
 					case GUIDE_LOAN_PREP_SECURITY:
-						'Next up is Security.\n\nGo ahead and close the terminal by clicking outside the monitor.';
+						'Next: Security. You don\'t know what I want yet — so go ask me!\n\nClick outside the monitor.';
 					case GUIDE_LOAN_PREP_COMFORTABLE:
-						'You know — the current rate is 1,419 LOR a month and the status is Marginal. '
-							+ 'Better ask the client about their comfortable rate using the guide book questions.\n\n'
-							+ 'Close the terminal when you are ready.';
+						'Yikes — 1,419 LOR a month and only Marginal. My food truck can\'t take that.\n\n'
+							+ 'Ask me what payment I\'m comfortable with. Click outside the monitor.';
 					default:
-						'Next up are monthly expenses — housing, living, and other.\n\n'
-							+ 'You will need to ask the client using the guide book. '
-							+ 'Go ahead and close the terminal by clicking outside the monitor.';
+						'Now my monthly expenses — housing, living, other. Never guess. Ask!\n\n'
+							+ 'Click outside the monitor.';
 				}
 				var prepHighlight = switch (guidePhase)
 				{
@@ -1518,9 +1543,8 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'The book you see on your table is your guide book that will help you navigate in your job '
-						+ 'and also allow you to ask relevant questions to your clients.\n\n'
-						+ 'Click Questions to ask in the contents to jump to pages 31–32.',
+					'Behold: the Guide Book. Rules, tips, and the official list of Questions You Are Allowed To Ask.\n\n'
+						+ 'Click "Questions to ask" in the contents to jump to pages 31–32.',
 					ctx.tocQuestionsHighlight,
 					false,
 					null,
@@ -1589,8 +1613,8 @@ class ChefTutorial
 				{
 					guideShownForPhase = guidePhase;
 					deskCoach.showCoach(
-						'Use Scan Mode to ask a question from the handbook, then click the client.\n\n'
-							+ 'Start with: Do you wish your loan to be secured or not?',
+						'Scan Mode: pick a question in the book, then click me.\n\n'
+							+ 'Ask: "Do you wish your loan to be secured or not?"',
 						ctx.questionHighlight,
 						false,
 						null,
@@ -1611,7 +1635,7 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Nice — you have the answer. Open the terminal and set Security to Not secured.',
+					'Not secured — I\'m not betting the truck on it. Open the terminal and set Security to Not secured.',
 					computerHighlight,
 					false,
 					null,
@@ -1633,7 +1657,7 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Nice — you have the answer. Open the terminal and enter monthly expenses: 700 housing, 400 living, 150 other.',
+					'Got all that? Open the terminal and enter: 700 housing, 400 living, 150 other.',
 					computerHighlight,
 					false,
 					null,
@@ -1695,8 +1719,8 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Use Scan Mode to ask a question from the handbook, then click the client.\n\n'
-						+ 'Start with: What are your monthly living expenses?',
+					'Scan Mode: pick a question in the book, then click me.\n\n'
+						+ 'Ask: "What are your monthly living expenses?"',
 					ctx.questionHighlight,
 					false,
 					null,
@@ -1716,7 +1740,7 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Okay, that will be around 24 months — go ahead and write the term as 24.',
+					'1,200 a month works out to about 24 months. Set the term to 24.',
 					computerHighlight,
 					false,
 					null,
@@ -1778,8 +1802,8 @@ class ChefTutorial
 			{
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
-					'Use Scan Mode to ask a question from the handbook, then click the client.\n\n'
-						+ 'Start with: What monthly payment would you be comfortable with?',
+					'Scan Mode: pick a question in the book, then click me.\n\n'
+						+ 'Ask: "What monthly payment would you be comfortable with?"',
 					ctx.questionHighlight,
 					false,
 					null,
@@ -1808,8 +1832,8 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'First, let\'s start with National ID. You can search by name here too.\n\n'
-						+ 'Go ahead and find me: ${managerDisplayName()}.',
+					'Every application starts with a National ID. You can search by name here too.\n\n'
+						+ 'Find me: ${managerDisplayName()}.',
 					ui.getTutorialHighlight("loan_national_id")
 				);
 			}
@@ -1832,7 +1856,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Choose loan product. For this test, pick Personal.',
+					'Loan product: a food truck counts as Personal. Pick Personal.',
 					ui.getTutorialHighlight("loan_loan_type")
 				);
 			}
@@ -1855,7 +1879,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Enter the loan amount: 25,500 LOR.',
+					'Amount: 25,500 LOR. A truck, a grill, and one very large spatula.',
 					ui.getTutorialHighlight("loan_amount")
 				);
 			}
@@ -1878,7 +1902,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'We do not yet know which payment rate is comfortable for the client — for now, enter 10 months.',
+					'We don\'t know my comfortable payment yet. Try 10 months for now — let\'s see what happens.',
 					ui.getTutorialHighlight("loan_term")
 				);
 			}
@@ -2004,7 +2028,7 @@ class ChefTutorial
 					showMonitorPhaseCoach(
 						monitorCoach,
 						monitor,
-						'It\'s not affordable — try increasing the term to 20 months.',
+						'RED. Not affordable! The payments are too big — stretch the term to 20 months.',
 						ui.getTutorialHighlight("loan_term")
 					);
 				}
@@ -2046,7 +2070,7 @@ class ChefTutorial
 					showMonitorPhaseCoach(
 						monitorCoach,
 						monitor,
-						'Check the verdict — it should say Marginal.',
+						'Better — Marginal. Not great, not terrible. Check the verdict.',
 						ui.getTutorialHighlight("loan_calc_payment")
 					);
 				}
@@ -2086,7 +2110,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Looks good — hit SUBMIT FOR APPROVAL.',
+					'Green means go! Hit SUBMIT.',
 					ui.getTutorialHighlight("loan_submit_button")
 				);
 			}
@@ -2274,7 +2298,7 @@ class ChefTutorial
 				{
 					guideShownForPhase = guidePhase;
 					var openMsg = if (detailsShreddedRecovery)
-						'Whoops, well, now you know how shredder works. Go ahead and open the computer again.'
+						'Whoops. Well — now you know how the shredder works. Open the computer and print it again.'
 					else
 						'Click the computer to open the terminal.';
 					deskCoach.showCoach(openMsg, null, false, null, true);
@@ -2360,9 +2384,8 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'This is our greatest terminal. Do not be afraid of so many things in there — '
-						+ 'it is really easy to get the hang of.\n\n'
-						+ 'Let\'s explore Client Database — go ahead and open it.'
+					'Behold: the CoolMath 3000. State of the art. Probably.\n\n'
+						+ 'Payroll zeroed my salary again — let\'s fix it. Open Client Database.'
 				);
 			}
 
@@ -2384,8 +2407,8 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Here is the list of all our clients.\n\n'
-						+ 'You can look someone up by national ID or by name — try to find me, ${managerDisplayName()}.'
+					'Every client we\'ve got. Search by name or by National ID.\n\n'
+						+ 'Find me: ${managerDisplayName()}.'
 				);
 				ui.focusSearchField();
 			}
@@ -2450,7 +2473,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Click my row in the list to open my full record.'
+					'There I am! Click my row to open my record.'
 				);
 			}
 
@@ -2498,8 +2521,8 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'This screen is my full client record in the bank system.\n\n'
-						+ 'Find Annual Salary — it incorrectly shows zero. Change it to ${TARGET_SALARY} LOR, then confirm the edit.'
+					'My whole life, in green text. Find Annual Salary — zero! Payroll strikes again.\n\n'
+						+ 'Change it to ${TARGET_SALARY} LOR and confirm the edit.'
 				);
 			}
 
@@ -2529,7 +2552,7 @@ class ChefTutorial
 				showMonitorPhaseCoach(
 					monitorCoach,
 					monitor,
-					'Good. Now hit PRINT > — the paper lands on the printer by your desk.'
+					'Much better. Now hit PRINT > — around here, we double-check everything on paper.'
 				);
 			}
 		}

@@ -218,15 +218,20 @@
       },
       "visit": {
         "purpose": "loan",
-        "target": "Loan 30000 LOR approved because all data is correct",
+        "target": "Auto secured 30,000 LOR (not the 40,000 he opens with)",
         "loanAmountLOR": 30000,
         "outcome": "approve",
-        "loanProduct": "personal",
+        "loanProduct": "auto",
         "loanSecurity": "secured",
         "loanTerms": [
-          43,
-          44,
-          45
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42
         ],
         "comfortablePaymentLOR": 875,
         "comfortablePaymentToleranceLOR": 75,
@@ -235,46 +240,48 @@
         "spendOtherLOR": 350,
         "expectedMonthlySalaryLOR": 4040,
         "primaryTermMonths": 45,
-        "affordabilityVerdict": "AFFORDABLE",
-        "monthlyPaymentLOR": 813,
-        "theme": "general",
+        "theme": "car",
         "dialogue": {
           "opening": [
-            "Hi — thanks for seeing me.",
-            "I'd like to apply for a personal loan.",
-            "I'm looking at about 30,000 LOR.",
+            "Hey. Okay. Don't judge me.",
+            "I found a 1979 Valdorian roadster. Convertible.",
+            "I need forty thousand LOR—",
+            "*bzzt bzzt*",
+            "...That's my wife.",
+            "She says thirty. Thirty thousand LOR.",
             "Here's my ID."
           ],
-          "borrow_amount": "About 30,000 LOR.",
-          "loan_purpose": "Personal expenses — some planned, some not.",
+          "borrow_amount": "Thirty thousand. My wife was very specific.",
+          "loan_purpose": "The car! It's a car loan. For a car.",
           "loan_security": "secured",
-          "loan_security_unsure": true,
-          "loan_security_answer": "Unsecured is fine — keep it simple.",
+          "loan_security_unsure": false,
+          "loan_security_line": "Secured — the car's the collateral. I'll never miss a payment. Never.",
           "living_expenses": [
-            "Rent's about 1,150.",
-            "Living costs maybe 900, other stuff around 350."
+            "Mortgage is 1,150.",
+            "Living, about 900.",
+            "Other stuff, 350. Mostly car magazines."
           ],
-          "comfortable_rate": "Around 875 LOR a month — give or take 75.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "Busy day at the branch?",
+          "comfortable_rate": "875 a month, plus or minus 75. Also my wife's number.",
+          "annual_salary": "It's in your system. Commission's been good lately!",
+          "monthly_salary": "Check your records — commission makes my head spin.",
+          "small_talk_label": "What's so special about this car?",
           "small_talk": [
-            "Seems like it!",
-            "Glad I caught you."
+            "Pop-up headlights. Leather seats.",
+            "It smells like 1979.",
+            "I can't explain it. It's a feeling."
           ],
           "thanks": [
-            "Thanks.",
-            "Appreciate the help.",
-            "Have a good one!"
+            "YES. Thank you!",
+            "Top down all the way home!"
           ],
           "quickAnswers": {
-            "borrow_amount": "30,000 LOR.",
-            "loan_purpose": "Personal expenses.",
+            "borrow_amount": "30,000. Not forty. Thirty.",
+            "loan_purpose": "The car.",
             "loan_security": "Secured.",
-            "living_expenses": "1,150 housing, 900 living, 350 other.",
-            "comfortable_rate": "About 875 LOR a month.",
+            "living_expenses": "1,150 mortgage, 900 living, 350 other.",
+            "comfortable_rate": "About 875 a month.",
             "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "monthly_salary": "Your records know."
           }
         }
       }
@@ -357,63 +364,76 @@
       },
       "visit": {
         "purpose": "loan",
-        "target": "Correct values verified — loan 55000 LOR approved",
+        "target": "Honest application (other = 1,100 boat loan + 400 marina) is NOT AFFORDABLE -> bank declines",
         "loanAmountLOR": 55000,
-        "outcome": "approve",
+        "outcome": "decline",
         "loanProduct": "personal",
-        "loanSecurity": "unsecured",
+        "loanSecurity": "secured",
         "loanTerms": [
-          54,
-          55,
-          56
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53
         ],
         "comfortablePaymentLOR": 1400,
         "comfortablePaymentToleranceLOR": 100,
         "spendHousingLOR": 1750,
         "spendLivingLOR": 650,
-        "spendOtherLOR": 350,
+        "spendOtherLOR": 1500,
         "expectedMonthlySalaryLOR": 5143,
         "primaryTermMonths": 56,
-        "affordabilityVerdict": "AFFORDABLE",
-        "monthlyPaymentLOR": 1301,
-        "theme": "medical",
+        "theme": "boat",
         "dialogue": {
           "opening": [
-            "Hello.",
-            "I have medical bills that didn't fully clear.",
-            "I'm hoping for about 55,000 LOR.",
+            "Ahoy.",
+            "Sorry. Habit.",
+            "I'd like 55,000 LOR for a boat.",
+            "A second boat. The first one gets lonely.",
             "Here's my ID."
           ],
-          "borrow_amount": "Around 55,000 LOR — outstanding medical bills.",
-          "loan_purpose": "Hospital and follow-up care costs.",
-          "loan_security": "unsecured",
+          "borrow_amount": "55,000 LOR. Twin engines. She's a beauty.",
+          "loan_purpose": "Boat number two. I'm naming her the Loan Shark.",
+          "loan_security": "secured",
           "loan_security_unsure": false,
-          "loan_security_answer": "Unsecured is fine.",
+          "loan_security_line": "Secured. Put my first boat down as collateral.",
           "living_expenses": [
-            "Rent's about 1,750.",
-            "Living costs maybe 650, other stuff around 350."
+            "Rent's 1,750.",
+            "Living, about 650.",
+            "Other... well. The first boat.",
+            "1,100 a month on its loan. Plus 400 for the marina."
           ],
-          "comfortable_rate": "Around 1,400 LOR a month — give or take 100.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "Everything alright now?",
+          "comfortable_rate": "About 1,400 a month. I can swing it. Probably.",
+          "annual_salary": "It's in your system. Engineers don't fudge numbers.",
+          "monthly_salary": "Check the database — I build bridges, not budgets.",
+          "small_talk_label": "Two boats? Really?",
           "small_talk": [
-            "Much better, thanks.",
-            "Just cleaning up the paperwork side."
+            "You can't be in two places at once.",
+            "But you CAN own two boats.",
+            "That's just science."
           ],
           "thanks": [
-            "Thank you.",
-            "That's a huge help.",
-            "Goodbye."
+            "Anchors aweigh!",
+            "Thanks, friend."
+          ],
+          "decline": [
+            "...Not affordable, huh?",
+            "Yeah. The first boat tells me that every month.",
+            "Thanks for being straight with me.",
+            "Can I have my ID back?"
           ],
           "quickAnswers": {
             "borrow_amount": "55,000 LOR.",
-            "loan_purpose": "Hospital and follow-up care costs.",
-            "loan_security": "Unsecured.",
-            "living_expenses": "1,750 housing, 650 living, 350 other.",
-            "comfortable_rate": "About 1,400 LOR a month.",
+            "loan_purpose": "A second boat.",
+            "loan_security": "Secured.",
+            "living_expenses": "1,750 rent, 650 living, and 1,500 for the first boat and marina.",
+            "comfortable_rate": "About 1,400 a month.",
             "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "monthly_salary": "Check the database."
           }
         }
       }
@@ -3019,15 +3039,14 @@
       },
       "visit": {
         "purpose": "loan",
-        "target": "Loan 35000 LOR approved because all data is correct",
+        "target": "Personal secured 35,000 LOR; other expense = 2,400/yr insurance -> 200/mo",
         "loanAmountLOR": 35000,
         "outcome": "approve",
         "loanProduct": "personal",
         "loanSecurity": "secured",
         "loanTerms": [
-          23,
-          24,
-          25
+          25,
+          26
         ],
         "comfortablePaymentLOR": 1600,
         "comfortablePaymentToleranceLOR": 100,
@@ -3039,41 +3058,43 @@
         "theme": "wedding",
         "dialogue": {
           "opening": [
-            "Hey! How are you?",
-            "I need a loan for my wedding.",
-            "About 35,000 LOR should cover it.",
+            "Morning! Big week for me.",
+            "I'm getting married on Saturday!",
+            "I need about 35,000 LOR for the wedding.",
             "Here's my ID."
           ],
-          "borrow_amount": "About 35,000 LOR — for the wedding wishlist.",
-          "loan_purpose": "The wedding — venue, catering, all of it.",
+          "borrow_amount": "35,000 LOR. The caterer quoted us in 'yikes'.",
+          "loan_purpose": "The wedding — venue, band, and a cake shaped like my truck.",
           "loan_security": "secured",
           "loan_security_unsure": true,
-          "loan_security_answer": "Oh! Let's make it secure.",
+          "loan_security_answer": "Secured, then. Lower rate? Easy call.",
           "living_expenses": [
-            "Rent's about 1,200.",
-            "Living costs maybe 900, other stuff around 200."
+            "Rent's 1,200 a month.",
+            "Living costs, about 900.",
+            "Oh — and truck insurance. 2,400 a year.",
+            "That counts, right? It feels like it counts."
           ],
-          "comfortable_rate": "Around 1,600 LOR a month — give or take 100.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — I submitted my contract a while back. Divide by twelve.",
-          "small_talk_label": "How's the wedding planning?",
+          "comfortable_rate": "Around 1,600 LOR a month. Give or take 100.",
+          "annual_salary": "Whatever's in your system — I haul freight, not paperwork.",
+          "monthly_salary": "No idea, honestly. Your database knows me better than I do.",
+          "small_talk_label": "Nervous about Saturday?",
           "small_talk": [
-            "Stressful — but exciting!",
-            "The wishlist keeps growing though."
+            "Terrified. She's way out of my league.",
+            "My best man says his speech is 'mostly done'.",
+            "That means he hasn't started."
           ],
           "thanks": [
-            "Thank you!",
-            "They're going to love this.",
-            "Have a good one!"
+            "You're a lifesaver!",
+            "You're invited, by the way. Bring a fork."
           ],
           "quickAnswers": {
             "borrow_amount": "35,000 LOR.",
-            "loan_purpose": "For the wedding.",
+            "loan_purpose": "The wedding!",
             "loan_security": "Secured.",
-            "living_expenses": "1,200 housing, 900 living, 200 other.",
+            "living_expenses": "1,200 rent, 900 living, and 2,400 a year for insurance.",
             "comfortable_rate": "About 1,600 LOR a month.",
             "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "monthly_salary": "Your system knows."
           }
         }
       }
@@ -3156,12 +3177,13 @@
       },
       "visit": {
         "purpose": "loan",
-        "target": "Loan 35000 LOR approved because all data is correct",
+        "target": "Personal unsecured 35,000 LOR; salary from database (6,474/mo), not her 9,000 claim",
         "loanAmountLOR": 35000,
         "outcome": "approve",
         "loanProduct": "personal",
         "loanSecurity": "unsecured",
         "loanTerms": [
+          17,
           18,
           19,
           20
@@ -3179,40 +3201,41 @@
         "dialogue": {
           "opening": [
             "Good morning.",
-            "I'm paying for a professional certification course.",
-            "I need about 35,000 LOR.",
+            "I'm taking an advanced certification course.",
+            "I need 35,000 LOR for tuition.",
             "Here's my ID."
           ],
-          "borrow_amount": "About 35,000 LOR — tuition and materials.",
-          "loan_purpose": "A certification program — career advancement.",
+          "borrow_amount": "35,000 LOR — tuition, books, and one very expensive model jaw.",
+          "loan_purpose": "A professional certification. It's a career move.",
           "loan_security": "unsecured",
           "loan_security_unsure": false,
-          "loan_security_answer": "Unsecured is fine.",
+          "loan_security_line": "Unsecured. I'm not betting my apartment on a course.",
           "living_expenses": [
-            "Rent's about 1,800.",
-            "Living costs maybe 900, other stuff around 350."
+            "Rent's 1,800.",
+            "Living costs around 900.",
+            "Other things, maybe 350."
           ],
-          "comfortable_rate": "Around 2,100 LOR a month — give or take 175.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "What are you studying?",
+          "comfortable_rate": "About 2,100 a month, give or take 175.",
+          "annual_salary": "Around 108,000 a year! ...Eventually.",
+          "monthly_salary": "Nine thousand a month! Well — once I'm certified. Think positive!",
+          "small_talk_label": "Why the certification?",
           "small_talk": [
-            "Advanced accounting — night classes.",
-            "Worth it if it lands a better role."
+            "Ten years of scraping tartar.",
+            "I want my own clinic someday.",
+            "I've already picked the waiting-room music."
           ],
           "thanks": [
-            "Great.",
-            "Classes start next month.",
-            "Thanks!"
+            "Wonderful. Thank you!",
+            "Floss daily. I'll know if you don't."
           ],
           "quickAnswers": {
             "borrow_amount": "35,000 LOR.",
-            "loan_purpose": "A certification program.",
+            "loan_purpose": "My certification.",
             "loan_security": "Unsecured.",
-            "living_expenses": "1,800 housing, 900 living, 350 other.",
-            "comfortable_rate": "About 2,100 LOR a month.",
-            "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "living_expenses": "1,800 rent, 900 living, 350 other.",
+            "comfortable_rate": "About 2,100 a month.",
+            "annual_salary": "108,000! Someday.",
+            "monthly_salary": "Nine thousand! ...After the course."
           }
         }
       }
@@ -5703,42 +5726,31 @@
         "theme": "wedding",
         "dialogue": {
           "opening": [
-            "Hi — I need my salary corrected in your database.",
-            "Here's my Kethran ID and job contract.",
-            "The contract lists one hundred eighty-five thousand KTH.",
-            "That's my monthly salary — not annual.",
-            "Please fix my annual salary to match."
+            "Hello! A quick one, I hope.",
+            "Your database says I earn zero.",
+            "My students say the same, but they're joking.",
+            "Here's my ID and my job contract.",
+            "That's 185,000 KTH per month — not per year.",
+            "Could you fix my annual salary?"
           ],
-          "borrow_amount": "I'm not here for a loan — just the salary update.",
-          "loan_purpose": "The wedding — venue, catering, all of it.",
-          "loan_security": "secured",
-          "loan_security_unsure": true,
-          "loan_security_answer": "Oh! Let's make it secure.",
-          "living_expenses": [
-            "Rent's about 700.",
-            "Living costs maybe 400, other stuff around 150."
-          ],
-          "comfortable_rate": "Around 1,200 LOR a month — give or take 100.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "How's the wedding planning?",
+          "small_talk_label": "What do you teach?",
           "small_talk": [
-            "Stressful — but exciting!",
-            "The wishlist keeps growing though."
+            "Mathematics.",
+            "Yes, I could do this conversion myself.",
+            "No, I won't. It's my day off."
           ],
           "thanks": [
-            "Thank you!",
-            "She's going to love this.",
-            "Have a good one!"
+            "Wonderful, thank you!",
+            "Zero was really hurting my self-esteem."
           ],
           "quickAnswers": {
-            "borrow_amount": "No loan — salary update only.",
-            "loan_purpose": "The wedding.",
-            "loan_security": "Unsecured.",
-            "living_expenses": "700 housing, 400 living, 150 other.",
-            "comfortable_rate": "About 1,200 LOR a month.",
-            "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "annual_salary": "185,000 KTH a month — convert it, then times twelve.",
+            "monthly_salary": "185,000 KTH. Convert it to LOR.",
+            "borrow_amount": "No loan today — just the salary fix.",
+            "loan_purpose": "No loan today — just the salary fix.",
+            "loan_security": "No loan today — just the salary fix.",
+            "living_expenses": "No loan today — just the salary fix.",
+            "comfortable_rate": "No loan today — just the salary fix."
           }
         }
       }
@@ -11300,41 +11312,43 @@
         "theme": "car",
         "dialogue": {
           "opening": [
-            "Hey. I need a loan. Today.",
-            "Forty thousand LOR — personal, unsecured.",
-            "Can we hurry? I'm late.",
-            "Here's my ID."
+            "Hi! First real job!",
+            "I'm an accountant at an Ostmark firm now.",
+            "Your system still says I earn nothing.",
+            "Here's my ID and contract. That's my annual salary — in OST.",
+            "Once that's fixed, I'd like a 40,000 LOR loan."
           ],
-          "borrow_amount": "Forty thousand LOR. Personal.",
-          "loan_purpose": "Personal expenses. Look, just process it.",
+          "borrow_amount": "40,000 LOR. Personal.",
+          "loan_purpose": "Paying off my student loans in one go. Fresh start!",
           "loan_security": "unsecured",
           "loan_security_unsure": false,
-          "loan_security_answer": "Unsecured is fine.",
+          "loan_security_line": "Unsecured — I don't own anything yet. Except this shirt.",
           "living_expenses": [
-            "Rent's about 700.",
-            "Living costs maybe 400, other stuff around 150."
+            "Rent's 700 — I have four roommates.",
+            "Living, about 400.",
+            "Other stuff, 150. Cat food, mostly."
           ],
-          "comfortable_rate": "Around 1,200 LOR a month — give or take 100.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "Found a good car yet?",
+          "comfortable_rate": "Around 1,200 a month, give or take 100.",
+          "annual_salary": "It's on the contract — in OST. Thirteen million and change!",
+          "monthly_salary": "Convert the contract to LOR, then divide by twelve.",
+          "small_talk_label": "How's the new job?",
           "small_talk": [
-            "A few options — trying not to rush it.",
-            "Just need the loan sorted first."
+            "Great! I count things all day.",
+            "Yesterday I counted the office plants. Eleven.",
+            "Nobody asked me to."
           ],
           "thanks": [
-            "Perfect.",
-            "I'll pick it up this weekend.",
-            "Thanks for your help!"
+            "Awesome! Debt-free-ish!",
+            "My cat thanks you too."
           ],
           "quickAnswers": {
-            "borrow_amount": "40,000 LOR — hurry up.",
-            "loan_purpose": "Personal.",
+            "borrow_amount": "40,000 LOR.",
+            "loan_purpose": "Student loans.",
             "loan_security": "Unsecured.",
-            "living_expenses": "700 housing, 400 living, 150 other.",
-            "comfortable_rate": "About 1,200 LOR a month.",
-            "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "living_expenses": "700 rent, 400 living, 150 other.",
+            "comfortable_rate": "About 1,200 a month.",
+            "annual_salary": "Check the contract — it's in OST.",
+            "monthly_salary": "Annual in LOR, divided by twelve."
           }
         }
       }
@@ -11437,41 +11451,28 @@
         "theme": "education",
         "dialogue": {
           "opening": [
-            "Good morning.",
-            "I'm paying for a professional certification course.",
-            "I need about 15,000 LOR.",
-            "Here's my ID."
+            "Hi. Loan. Forty thousand LOR.",
+            "Personal. Unsecured. I'm in a hurry.",
+            "Here's my ID.",
+            "Don't stare at the photo. It's old."
           ],
-          "borrow_amount": "About 15,000 LOR — tuition and materials.",
-          "loan_purpose": "A certification program — career advancement.",
-          "loan_security": "secured",
-          "loan_security_unsure": false,
-          "loan_security_answer": "Unsecured is fine.",
-          "living_expenses": [
-            "Rent's about 1,800.",
-            "Living costs maybe 775, other stuff around 350."
-          ],
-          "comfortable_rate": "Around 2,200 LOR a month — give or take 175.",
-          "annual_salary": "Check your database.",
-          "monthly_salary": "Not sure — divide my annual salary by twelve.",
-          "small_talk_label": "What are you studying?",
+          "small_talk_label": "Lovely day, isn't it?",
           "small_talk": [
-            "Advanced accounting — night classes.",
-            "Worth it if it lands a better role."
+            "Is it? Hadn't noticed.",
+            "Can we speed this up?"
           ],
           "thanks": [
-            "Great.",
-            "Classes start next month.",
-            "Thanks!"
+            "...Fine.",
+            "Just give me my papers back."
           ],
           "quickAnswers": {
-            "borrow_amount": "15,000 LOR.",
-            "loan_purpose": "A certification program.",
-            "loan_security": "Secured.",
-            "living_expenses": "1,800 housing, 775 living, 350 other.",
-            "comfortable_rate": "About 2,200 LOR a month.",
-            "annual_salary": "Check the database.",
-            "monthly_salary": "Use the annual from the system."
+            "borrow_amount": "Forty thousand. Hurry.",
+            "loan_purpose": "Personal.",
+            "loan_security": "Unsecured.",
+            "living_expenses": "Normal ones.",
+            "comfortable_rate": "Whatever. Something low.",
+            "annual_salary": "Check your database.",
+            "monthly_salary": "It's on file."
           }
         }
       }

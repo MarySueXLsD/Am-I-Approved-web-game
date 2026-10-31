@@ -737,6 +737,7 @@ class DeskDocument extends FlxSprite
 		dragging = true;
 		snapping = false;
 		OfficeAmbientAudio.playPaperWavingForDocument(this);
+		Juice.sfx(Juice.SFX_PICKUP, 0.5, 0.15);
 		if (onUpdateDragPresentation != null)
 			onUpdateDragPresentation(this);
 		if (centerGrab)
@@ -769,6 +770,13 @@ class DeskDocument extends FlxSprite
 		var mouse = FlxG.mouse.getViewPosition();
 		var droppedOnDeskProp = isOverDeskPropsAtPoint != null && isOverDeskPropsAtPoint(mouse);
 		finishDragResolve();
+		if (isStoredInLoanFolder())
+		{
+			Juice.sfx(Juice.SFX_TICK, 0.45, 0.05);
+			Juice.popText(mouse.x, mouse.y - 10, "Filed!", Juice.GREEN, 14, 30);
+		}
+		else
+			Juice.sfx(Juice.SFX_DROP, 0.7, 0.15);
 		if (isStoredInLoanFolder())
 			discardCompactDragPreview();
 		else if (!snapping && compactDragPreviewActive)

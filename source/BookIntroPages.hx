@@ -325,7 +325,7 @@ class BookIntroPages
 			case 34:
 				{
 					title: "Quick Reference",
-					body: "4. FOLDER — SUBMIT the form (green Affordable verdict).\n"
+					body: "4. FOLDER — SUBMIT the form. Honest numbers but red verdict? See page 90.\n"
 						+ "Print ID copy, application, checklist.\n"
 						+ "Drag copies into folder — not originals.\n\n"
 						+ "5. APPROVE — Submit for Approval when all three items are in.",
@@ -337,7 +337,7 @@ class BookIntroPages
 					title: "Salaries & Exchange",
 					body: "SALARIES IN LOR\n"
 						+ "Monthly = annual ÷ 12 (round to nearest LOR).\n"
-						+ "Not sure? Client Database → search by name.\n\n"
+						+ "Always use the Client Database — not what the client hopes to earn someday.\n\n"
 						+ "DATABASE-ONLY VISITS\n"
 						+ "Some clients need annual salary corrected — no loan. Convert foreign pay (page 92), update the record, return their documents.\n\n"
 						+ "FOREIGN CURRENCY\n"
@@ -507,8 +507,9 @@ class BookIntroPages
 			case 55:
 				{
 					title: "Loan Product & Amount",
-					body: "LOAN PRODUCT — personal, auto, credit card, or mortgage. Each has a different rate.\n\n"
-						+ "LOAN AMOUNT — in LOR. Larger amounts earn a small rate discount.",
+					body: "LOAN PRODUCT — personal, auto, credit card, or mortgage. Each has a different rate.\n"
+						+ "Buying a car? Auto. A home? Mortgage. Everything else? Personal.\n\n"
+						+ "LOAN AMOUNT — in LOR. Use the client's final answer, not their first.",
 					imagePath: null,
 					imageCaption: null
 				};
@@ -564,6 +565,7 @@ class BookIntroPages
 				{
 					title: "Monthly Expenses",
 					body: "Use the numbers the client gave you in Scan Mode.\n\n"
+						+ "Yearly bill? Divide by 12. Existing loan payments count as Other.\n\n"
 						+ "Wrong expenses mean a wrong verdict.",
 					imagePath: null,
 					imageCaption: null
@@ -786,7 +788,9 @@ class BookIntroPages
 				{
 					title: "Outcomes — Rejected",
 					body: "An Application Errors document lists what went wrong.\n\n"
-						+ "Read every bullet. Fix the form, reprint, reassemble, submit again.",
+						+ "Read every bullet. Fix the form, reprint, reassemble, submit again.\n\n"
+						+ "HONEST DECLINES — if the client's true numbers are Not Affordable, never fudge them. "
+						+ "Submit the honest application; the bank says no and the client keeps their finances intact.",
 					imagePath: null,
 					imageCaption: null
 				};

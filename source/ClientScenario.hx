@@ -24,6 +24,10 @@ class ClientScenario
 	public var passportIncludedInOpening:Bool;
 	public var requiresDocumentReturn:Bool;
 	public var identityFraud:Bool;
+	/** The honest application is unaffordable — the correct outcome is a bank decline, not an approval. */
+	public var expectDecline:Bool = false;
+	/** Portrait used for the ID card photo when it should differ from the client's face (fraud). */
+	public var idPortraitPath:Null<String> = null;
 
 	public function new(
 		portraitPath:String,

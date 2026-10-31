@@ -36,6 +36,7 @@ class TutorialGuideOverlay extends FlxGroup
 	static inline var SCREEN_BOTTOM_MARGIN = 12;
 	static inline var SCREEN_TOP_MARGIN = 12;
 	static inline var SLIDE_DURATION = 0.28;
+	static inline var TYPE_CHARS_PER_SEC = 110.0;
 
 	var dimBg:FlxSprite;
 	var arrowSprite:FlxSprite;
@@ -79,6 +80,9 @@ class TutorialGuideOverlay extends FlxGroup
 		continueAction:Null<Void->Void>, pinBottom:Bool, pinTop:Bool, pinAboveAnchor:Bool, spotlight:Bool,
 		title:String, animate:Bool}>;
 	var currentCoachKey = "";
+	var typeFull = "";
+	var typeShown = 0.0;
+	var typeVisibleChars = 0;
 	public var isShowing(default, null) = false;
 
 	public function new()
@@ -300,6 +304,7 @@ class TutorialGuideOverlay extends FlxGroup
 		else
 		{
 			bodyText.text = spec.message;
+			startTypewriter(spec.message);
 			titleLabel.visible = false;
 			speakerText.visible = spec.message.length > 0;
 			bodyText.visible = spec.message.length > 0;
@@ -426,6 +431,16 @@ class TutorialGuideOverlay extends FlxGroup
 			}
 		}
 
+		if (isTyping())
+		{
+			// A click while text is still typing just finishes the line.
+			if (FlxG.mouse.justPressed && isPointOnOverlay(FlxG.mouse.x, FlxG.mouse.y))
+				finishTypewriter();
+			else
+				updateTypewriter(elapsed);
+			return;
+		}
+
 		if (waitingForContinue && !slideBusy && FlxG.mouse.justPressed && isPointOnContinue(FlxG.mouse.x, FlxG.mouse.y))
 		{
 			var cb = onContinue;
@@ -438,6 +453,57 @@ class TutorialGuideOverlay extends FlxGroup
 					cb();
 			});
 		}
+	}
+
+	function isTyping():Bool
+	{
+		return typeVisibleChars < typeFull.length;
+	}
+
+	function startTypewriter(message:String):Void
+	{
+		typeFull = message;
+		typeShown = 0;
+		typeVisibleChars = 0;
+		applyTypeMask();
+	}
+
+	function updateTypewriter(elapsed:Float):Void
+	{
+		typeShown += elapsed * TYPE_CHARS_PER_SEC;
+		var next = Std.int(Math.min(typeFull.length, typeShown));
+		if (next == typeVisibleChars)
+			return;
+
+		var spoke = false;
+		for (i in typeVisibleChars...next)
+		{
+			var c = typeFull.charAt(i);
+			if (c != " " && c != "\n")
+				spoke = true;
+		}
+		typeVisibleChars = next;
+		applyTypeMask();
+		if (spoke && bodyText.visible)
+			Juice.blip();
+	}
+
+	function finishTypewriter():Void
+	{
+		typeVisibleChars = typeFull.length;
+		typeShown = typeFull.length;
+		applyTypeMask();
+	}
+
+	/**
+	 * The full text stays laid out (so wrapping and the badge size never jump);
+	 * characters not yet "typed" are simply painted in the badge colour.
+	 */
+	function applyTypeMask():Void
+	{
+		bodyText.clearFormats();
+		if (typeVisibleChars < typeFull.length)
+			bodyText.addFormat(new flixel.text.FlxText.FlxTextFormat(BADGE_FILL & 0xFFFFFF | 0xFF000000), typeVisibleChars, typeFull.length);
 	}
 
 	function slideIn():Void
