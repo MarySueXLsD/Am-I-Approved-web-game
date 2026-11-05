@@ -125,6 +125,54 @@ def main():
         out.append(y * math.sin(math.pi * t / 0.35))
     write("whoosh.wav", out, 0.4)
 
+    # Soft shoe steps for clients walking up to the counter.
+    steps = [0.0] * int(1.15 * RATE)
+    for k in range(4):
+        start = int((0.04 + k * 0.27) * RATE)
+        burst = lowpass([random.uniform(-1, 1) for _ in range(int(0.1 * RATE))], 0.12)
+        for i, n in enumerate(burst):
+            t = i / RATE
+            if start + i < len(steps):
+                steps[start + i] += (n + 0.8 * sine(85, t)) * env(t, 0.002, 0.025)
+    write("footsteps.wav", steps, 0.5)
+
+    # Counter service bell.
+    write("bell.wav", render(0.9, lambda t: (
+        sine(2093, t) + 0.5 * sine(2637, t) + 0.25 * sine(4186, t)) * env(t, 0.001, 0.22)), 0.45)
+
+    # Phone ringing a few offices away.
+    ring = [0.0] * int(3.4 * RATE)
+    for start_s in (0.0, 0.5, 2.0, 2.5):
+        start = int(start_s * RATE)
+        for i in range(int(0.4 * RATE)):
+            t = i / RATE
+            tremolo = 0.5 + 0.5 * square(22, t)
+            ring[start + i] += (sine(880, t) + sine(1046, t)) * tremolo * min(1.0, t * 80, (0.4 - t) * 80)
+    write("phone.wav", lowpass(ring, 0.2), 0.3)
+
+    # Fluorescent tubes: relay clicks and mains buzz stuttering on.
+    lights = [0.0] * int(1.3 * RATE)
+    for start_s, length in ((0.0, 0.1), (0.3, 0.14), (0.62, 0.68)):
+        start = int(start_s * RATE)
+        for i in range(int(length * RATE)):
+            t = i / RATE
+            fade = min(1.0, (length - t) * 12)
+            lights[start + i] += (0.35 * square(100, t) * sine(200, t) + 0.05 * random.uniform(-1, 1)) * fade
+            if i < 300:
+                lights[start + i] += random.uniform(-1, 1) * env(t, 0.0005, 0.004)
+    write("lights.wav", lowpass(lights, 0.4), 0.45)
+
+    # Page turn: a quick papery sweep.
+    noise = [random.uniform(-1, 1) for _ in range(int(0.2 * RATE))]
+    sweep = highpass(noise, 0.55)
+    write("page.wav", [s * math.sin(math.pi * i / len(sweep)) ** 2 for i, s in enumerate(sweep)], 0.4)
+
+    # A heavy book landing on a desk.
+    noise = lowpass([random.uniform(-1, 1) for _ in range(int(0.4 * RATE))], 0.1)
+    write("thump.wav", [
+        (0.8 * n + sine(62 + 40 * math.exp(-i / RATE * 30), i / RATE)) * env(i / RATE, 0.001, 0.07) for i, n in enumerate(noise)
+    ], 0.85)
+
 
 if __name__ == "__main__":
     main()

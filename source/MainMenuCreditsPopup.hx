@@ -27,12 +27,12 @@ typedef MainMenuCreditLine =
 
 class MainMenuCreditsPopup extends MainMenuSlidePopup
 {
-	static inline var PANEL_COLOR = 0xEE120E0A;
-	static inline var BORDER_COLOR = 0xFFD4AF6A;
-	static inline var TITLE_COLOR = 0xFFE8C878;
-	static inline var ROLE_COLOR = 0xFFC9A04A;
-	static inline var NAME_COLOR = 0xFFF4E4C4;
-	static inline var BTN_BG = 0xFF241C14;
+	static inline var PANEL_COLOR = UiSkin.PANEL_GLASS;
+	static inline var BORDER_COLOR = UiSkin.TRIM;
+	static inline var TITLE_COLOR = UiSkin.TITLE;
+	static inline var ROLE_COLOR = UiSkin.TRIM;
+	static inline var NAME_COLOR = UiSkin.TEXT;
+	static inline var BTN_BG = UiSkin.BUTTON;
 	static inline var HOVER_SCALE = 1.06;
 	static inline var HOVER_TWEEN_DURATION = 0.14;
 
@@ -176,8 +176,7 @@ class MainMenuCreditsPopup extends MainMenuSlidePopup
 		restX = (w - panelW) * 0.5;
 		restY = (h - panelH) * 0.5;
 
-		panel.makeGraphic(Std.int(panelW), Std.int(panelH), PANEL_COLOR, true);
-		drawBorder(panel, Std.int(panelW), Std.int(panelH), BORDER_COLOR, 2);
+		skinPanel(panel, Std.int(panelW), Std.int(panelH));
 		panel.updateHitbox();
 
 		drawOrnament(ornamentTop, 0, 0, panelW - popupPad * 2);
@@ -185,7 +184,7 @@ class MainMenuCreditsPopup extends MainMenuSlidePopup
 
 		titleLabel.text = "Credits";
 		titleLabel.setFormat(null, popupTitleSize, TITLE_COLOR, "center");
-		titleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(40, 28, 16), Math.max(1, popupTitleSize / 12));
+		titleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, Math.max(1, popupTitleSize / 12));
 		titleLabel.fieldWidth = Std.int(panelW - popupPad * 2);
 
 		contentTop = popupPad + popupTitleSize + 20;
@@ -319,7 +318,7 @@ class MainMenuCreditsPopup extends MainMenuSlidePopup
 				var t = ensureLineText(slot);
 				t.text = entry.text;
 				t.setFormat(null, entryTextSize(entry), entryColor(entry), "center");
-				t.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(24, 16, 10), 1);
+				t.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, 1);
 				t.fieldWidth = textW;
 				t.visible = true;
 				slot++;

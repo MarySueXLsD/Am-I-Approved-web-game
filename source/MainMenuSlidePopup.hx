@@ -74,9 +74,10 @@ class MainMenuSlidePopup extends FlxGroup
 		ensureOverlay();
 		overlay.alpha = 0;
 
+		Juice.sfx(Juice.SFX_WHOOSH, 0.45, 0.08);
 		overlayTween = FlxTween.tween(overlay, {alpha: 1}, SLIDE_DURATION * 0.75, {ease: FlxEase.quadOut});
-		slideTween = FlxTween.tween(this, {slideDeltaX: 0}, SLIDE_DURATION, {
-			ease: FlxEase.quadOut,
+		slideTween = FlxTween.tween(this, {slideDeltaX: 0}, SLIDE_DURATION * 1.4, {
+			ease: FlxEase.backOut,
 			onUpdate: function(_)
 			{
 				syncPopupLayout();
@@ -95,6 +96,7 @@ class MainMenuSlidePopup extends FlxGroup
 
 		isAnimating = true;
 		cancelTweens();
+		Juice.sfx(Juice.SFX_WHOOSH, 0.25, 0.08);
 		overlayTween = FlxTween.tween(overlay, {alpha: 0}, SLIDE_DURATION * 0.75, {ease: FlxEase.quadIn});
 		slideTween = FlxTween.tween(this, {slideDeltaX: -panelW}, SLIDE_DURATION, {
 			ease: FlxEase.quadIn,
@@ -203,7 +205,7 @@ class MainMenuSlidePopup extends FlxGroup
 	{
 		if (cachedOverlayW != FlxG.width || cachedOverlayH != FlxG.height)
 		{
-			overlay.makeGraphic(Std.int(FlxG.width), Std.int(FlxG.height), 0xAA000000, true);
+			overlay.makeGraphic(Std.int(FlxG.width), Std.int(FlxG.height), 0xAA14100C, true);
 			cachedOverlayW = FlxG.width;
 			cachedOverlayH = FlxG.height;
 		}
@@ -241,6 +243,20 @@ class MainMenuSlidePopup extends FlxGroup
 
 		FlxTween.cancelTweensOf(overlay);
 		FlxTween.cancelTweensOf(this);
+	}
+
+	/** Navy card with a steel pinstripe — the shared popup look, matching the main menu card. */
+	function skinPanel(sprite:FlxSprite, width:Int, height:Int):Void
+	{
+		UiSkin.panel(sprite, width - UiSkin.SHADOW_OFFSET, height - UiSkin.SHADOW_OFFSET, UiSkin.PANEL, UiSkin.PANEL_DEEP, 8, 3);
+		var w = width - UiSkin.SHADOW_OFFSET;
+		var h = height - UiSkin.SHADOW_OFFSET;
+		var c = UiSkin.TRIM_DARK;
+		sprite.pixels.fillRect(new Rectangle(10, 7, w - 20, 1), c);
+		sprite.pixels.fillRect(new Rectangle(10, h - 8, w - 20, 1), c);
+		sprite.pixels.fillRect(new Rectangle(7, 10, 1, h - 20), c);
+		sprite.pixels.fillRect(new Rectangle(w - 8, 10, 1, h - 20), c);
+		sprite.dirty = true;
 	}
 
 	function drawBorder(sprite:FlxSprite, width:Int, height:Int, color:Int, size:Int):Void

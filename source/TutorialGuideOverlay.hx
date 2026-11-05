@@ -23,14 +23,14 @@ class TutorialGuideOverlay extends FlxGroup
 	static inline var DIM_ALPHA = 155;
 
 	static inline var HIGHLIGHT_BASE = 0xFF66FF99;
-	static inline var BADGE_FILL = 0xF0141C24;
-	static inline var BADGE_BORDER = 0xFFD4AF6A;
-	static inline var TEXT_PRIMARY = 0xFFF4E4C4;
-	static inline var TEXT_ACCENT = 0xFFE8C878;
-	static inline var TEXT_BODY = 0xFFDCE6E0;
-	static inline var BTN_FILL = 0xFF1A3824;
-	static inline var BTN_BORDER = 0xFF50A060;
-	static inline var BTN_TEXT = 0xFFB4D28C;
+	static inline var BADGE_FILL = UiSkin.CREAM;
+	static inline var BADGE_BORDER = UiSkin.INK;
+	static inline var TEXT_PRIMARY = UiSkin.PANEL;
+	static inline var TEXT_ACCENT = UiSkin.ACCENT;
+	static inline var TEXT_BODY = UiSkin.INK;
+	static inline var BTN_FILL = UiSkin.TRIM;
+	static inline var BTN_BORDER = UiSkin.INK;
+	static inline var BTN_TEXT = UiSkin.INK;
 	static inline var ARROW_PATH = "static/arrow_right.png";
 	static inline var ARROW_SIZE = 28;
 	static inline var SCREEN_BOTTOM_MARGIN = 12;
@@ -711,7 +711,7 @@ class TutorialGuideOverlay extends FlxGroup
 		if (hasTitle)
 		{
 			titleLabel.setFormat(null, titleSize, TEXT_PRIMARY, "center");
-			titleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(10, 14, 18), 2);
+			titleLabel.borderStyle = FlxTextBorderStyle.NONE;
 			titleLabel.fieldWidth = Std.int(maxTextW);
 			titleLabel.text = titleLabel.text;
 			titleLabel.updateHitbox();
@@ -720,9 +720,9 @@ class TutorialGuideOverlay extends FlxGroup
 		if (hasCoach)
 		{
 			speakerText.setFormat(null, bodySize, TEXT_ACCENT, "left");
-			speakerText.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(10, 14, 18), 1);
+			speakerText.borderStyle = FlxTextBorderStyle.NONE;
 			bodyText.setFormat(null, bodySize, TEXT_BODY, "left");
-			bodyText.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(10, 14, 18), 1);
+			bodyText.borderStyle = FlxTextBorderStyle.NONE;
 			bodyText.fieldWidth = Std.int(maxTextW);
 			bodyText.text = bodyText.text;
 			bodyText.updateHitbox();
@@ -799,8 +799,7 @@ class TutorialGuideOverlay extends FlxGroup
 		this.badgeW = badgeW;
 
 		labelBadgeBg.visible = true;
-		labelBadgeBg.makeGraphic(badgeW, badgeH, BADGE_FILL, true);
-		drawBadgeBorder(labelBadgeBg, badgeW, badgeH, BADGE_BORDER);
+		UiSkin.panel(labelBadgeBg, badgeW, badgeH, BADGE_FILL, BADGE_BORDER, 5, 2);
 		labelBadgeBg.setPosition(pinX + slideDeltaX, pinY);
 		labelBadgeBg.updateHitbox();
 		badgeBaseY = pinY;
@@ -825,8 +824,7 @@ class TutorialGuideOverlay extends FlxGroup
 			var btnY = pinY + badgeH - pad - btnH;
 			continueHit.visible = true;
 			continueLabel.visible = true;
-			continueHit.makeGraphic(btnW, btnH, BTN_FILL, true);
-			drawBadgeBorder(continueHit, btnW, btnH, BTN_BORDER);
+			UiSkin.panel(continueHit, btnW, btnH, BTN_FILL, BTN_BORDER, 4, 2);
 			continueHit.setPosition(btnX, btnY);
 			continueHit.updateHitbox();
 			continueLabel.setFormat(null, 13, BTN_TEXT, "center");
@@ -872,7 +870,7 @@ class TutorialGuideOverlay extends FlxGroup
 		arrowSprite.angle = 90;
 		arrowSprite.setGraphicSize(ARROW_SIZE, ARROW_SIZE);
 		arrowSprite.updateHitbox();
-		arrowSprite.color = TEXT_ACCENT;
+		arrowSprite.color = UiSkin.TRIM;
 		arrowSprite.visible = true;
 		arrowBaseX = highlightRect.x + (highlightRect.w - ARROW_SIZE) * 0.5;
 		arrowBaseY = highlightRect.y - HIGHLIGHT_PAD - BADGE_GAP - ARROW_SIZE;

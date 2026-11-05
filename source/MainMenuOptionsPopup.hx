@@ -12,13 +12,13 @@ import flixel.util.FlxColor;
 
 class MainMenuOptionsPopup extends MainMenuSlidePopup
 {
-	static inline var PANEL_COLOR = 0xEE1A1410;
-	static inline var BORDER_COLOR = 0xFFD4AF6A;
-	static inline var LABEL_COLOR = 0xFFF4E4C4;
-	static inline var VALUE_COLOR = 0xFFE8C878;
-	static inline var SLIDER_TRACK = 0xFF3A3028;
-	static inline var SLIDER_FILL = 0xFFC9A04A;
-	static inline var BTN_BG = 0xFF2A2218;
+	static inline var PANEL_COLOR = UiSkin.PANEL_GLASS;
+	static inline var BORDER_COLOR = UiSkin.TRIM;
+	static inline var LABEL_COLOR = UiSkin.TEXT;
+	static inline var VALUE_COLOR = UiSkin.TITLE;
+	static inline var SLIDER_TRACK = UiSkin.PANEL_DEEP;
+	static inline var SLIDER_FILL = UiSkin.TRIM;
+	static inline var BTN_BG = UiSkin.BUTTON;
 	static inline var HOVER_SCALE = 1.06;
 	static inline var HOVER_TWEEN_DURATION = 0.14;
 
@@ -202,13 +202,12 @@ class MainMenuOptionsPopup extends MainMenuSlidePopup
 		restX = (w - panelW) * 0.5;
 		restY = (h - panelH) * 0.5;
 
-		panel.makeGraphic(Std.int(panelW), Std.int(panelH), PANEL_COLOR, true);
-		drawBorder(panel, Std.int(panelW), Std.int(panelH), BORDER_COLOR, 2);
+		skinPanel(panel, Std.int(panelW), Std.int(panelH));
 		panel.updateHitbox();
 
 		titleLabel.text = "Options";
 		titleLabel.setFormat(null, popupTitleSize, VALUE_COLOR, "center");
-		titleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(40, 28, 16), Math.max(1, popupTitleSize / 14));
+		titleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, Math.max(1, popupTitleSize / 14));
 		titleLabel.fieldWidth = Std.int(panelW - popupPad * 2);
 
 		popupRowStartY = popupPad + popupTitleSize + 18;
@@ -236,7 +235,7 @@ class MainMenuOptionsPopup extends MainMenuSlidePopup
 
 			var sliderY = rowY + popupFontSize + 8;
 			track.makeGraphic(Std.int(sliderW), popupSliderH, SLIDER_TRACK, true);
-			drawBorder(track, Std.int(sliderW), popupSliderH, 0xFF5A4A38, 1);
+			drawBorder(track, Std.int(sliderW), popupSliderH, UiSkin.PANEL_DEEP, 1);
 			track.updateHitbox();
 
 			fill.makeGraphic(1, popupSliderH, SLIDER_FILL, true);
@@ -373,7 +372,7 @@ class MainMenuOptionsPopup extends MainMenuSlidePopup
 	function layoutToggleButton(btnW:Int, btnH:Int, fontSize:Int):Void
 	{
 		var on = FlxG.fullscreen;
-		var bg = on ? 0xFF3A3020 : 0xFF2A2218;
+		var bg = on ? UiSkin.BUTTON_HOVER : UiSkin.BUTTON;
 		var border = on ? VALUE_COLOR : BORDER_COLOR;
 
 		fullscreenBtn.makeGraphic(btnW, btnH, bg, true);

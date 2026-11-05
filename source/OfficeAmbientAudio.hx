@@ -31,6 +31,7 @@ class OfficeAmbientAudio
 		{path: "static/Audio/Ambient/Office_Chair_Rolling_16sec.wav", duration: 16},
 		{path: "static/Audio/Ambient/Computer_Typing_7sec.wav", duration: 7, volumeScale: TYPING_VOLUME_SCALE},
 		{path: "static/Audio/Ambient/Man_Nearby_Coughing_13sec.wav", duration: 13},
+		{path: "static/Audio/SFX/phone.wav", duration: 4},
 	];
 
 	static var BLAH_BLAH_CLIPS:Array<AmbientClip> = [
