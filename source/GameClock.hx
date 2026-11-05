@@ -21,12 +21,18 @@ class GameClock
 		elapsedSeconds = 0.0;
 	}
 
-	public static function formatHudTime(colonVisible:Bool):String
+	/** Minutes since midnight as shown on the desk: everything that displays the time reads this. */
+	public static function displayedMinutes():Int
 	{
 		var dayMinutes = (END_HOUR - START_HOUR) * 60;
 		var progressedRaw = dayMinutes * (elapsedSeconds / DAY_DURATION_SECONDS);
 		var progressedMinutes = Std.int(Math.floor(progressedRaw / HUD_MINUTE_STEP) * HUD_MINUTE_STEP);
-		var totalMinutes = START_HOUR * 60 + progressedMinutes;
+		return START_HOUR * 60 + progressedMinutes;
+	}
+
+	public static function formatHudTime(colonVisible:Bool):String
+	{
+		var totalMinutes = displayedMinutes();
 		var hour = Std.int(totalMinutes / 60);
 		var minute = totalMinutes % 60;
 

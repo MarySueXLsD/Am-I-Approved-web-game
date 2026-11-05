@@ -29,24 +29,24 @@ class ClientScenarios
 	static inline var KETHRAN_ANNUAL_TOLERANCE = 100.0;
 	static inline var FRAUD_CITIZEN_INDEX = 81;
 	static inline var FRAUD_ID_CITIZEN_INDEX = 7;
-	static inline var FRAUD_ID_PORTRAIT = "static/Clients/client3.png";
+	/** Must not be a face the player meets this shift, or "Peter" looks like an earlier client. */
+	static inline var FRAUD_ID_PORTRAIT = "static/Clients/client2.png";
 
 	public static function count():Int
 	{
-		return 8;
+		return 4;
 	}
 
-	public static inline var LAST_PLAYABLE_CLIENT_INDEX = 7;
+	public static inline var LAST_PLAYABLE_CLIENT_INDEX = 3;
 
 	/**
-	 * Day one, in order of difficulty:
-	 * 1 Marcus  — wedding loan; one bill is quoted per year, not per month.
-	 * 2 Denis   — car loan (Auto product); changes the amount mid-sentence.
-	 * 3 Rachel  — quotes the salary she hopes to earn, not the one on file.
-	 * 4 Garrett — wants a second boat he can't afford: the right call is an honest decline.
-	 * 5 Yerasyl — no loan; monthly Kethran pay must become an annual LOR salary.
-	 * 6 Vadzim  — Ostmark contract to convert, then a full loan.
-	 * 7 "Peter" — someone else's ID. Compare the photo and confront.
+	 * The demo shift — one case per outcome, then the end-of-demo report:
+	 * 1 Marcus  — wedding loan; one bill is quoted per year, not per month. Approve.
+	 * 2 Garrett — wants a second boat he can't afford. Honest decline.
+	 * 3 "Peter" — someone else's ID. Compare the photo and confront.
+	 *
+	 * Parked for the full game, builders kept below: Denis (DENIS_CITIZEN_INDEX),
+	 * Rachel (RACHEL_CITIZEN_INDEX), yerasylSalaryUpdate(), vadzimSalaryAndLoan().
 	 */
 	public static function get(index:Int):ClientScenario
 	{
@@ -54,12 +54,8 @@ class ClientScenarios
 		{
 			case 0: chefTutorial();
 			case 1: fromCitizenIndex(MARCUS_CITIZEN_INDEX, "static/Clients/client1.png", Lorian);
-			case 2: fromCitizenIndex(DENIS_CITIZEN_INDEX, "static/Clients/client2.png");
-			case 3: fromCitizenIndex(RACHEL_CITIZEN_INDEX, "static/Clients/client4.png");
-			case 4: garrettSecondBoat();
-			case 5: yerasylSalaryUpdate();
-			case 6: vadzimSalaryAndLoan();
-			case 7: ostmarkIdentityFraud();
+			case 2: garrettSecondBoat();
+			case 3: ostmarkIdentityFraud();
 			default: fromCitizenIndex(MARCUS_CITIZEN_INDEX, "static/Clients/client1.png", Lorian);
 		}
 	}
@@ -246,7 +242,7 @@ class ClientScenarios
 		return steps;
 	}
 
-	/** Short send-off once training is done — the handbook (pages 33–35) holds the full cheat sheet. */
+	/** Short send-off once training is done — the handbook (pages 3–4) holds the full cheat sheet. */
 	static function chefTutorialSendOffSteps():Array<ClientConvStep>
 	{
 		return [
@@ -254,7 +250,7 @@ class ClientScenarios
 			{type: STEP_CLIENT, text: "Three rules: listen, check the records, do the math."},
 			{type: STEP_CLIENT, text: "Clients round, guess, and sometimes fib. The database doesn't."},
 			{type: STEP_CLIENT, text: "And if the honest numbers say no — the answer is no."},
-			{type: STEP_CLIENT, text: "Cheat sheet's on handbook pages 33–35. Go get 'em."}
+			{type: STEP_CLIENT, text: "Cheat sheet's on page 3 of the book. Go get 'em."}
 		];
 	}
 
@@ -432,9 +428,9 @@ class ClientScenarios
 	{
 		return [
 			{type: STEP_CLIENT, text: "A veteran, huh? I like the confidence."},
-			{type: STEP_CLIENT, text: "Handbook pages 33–35 if you get stuck. Pages 92–94 for currency math."},
-			{type: STEP_CLIENT, text: "And remember: if the honest numbers say no, the answer is no."},
+			{type: STEP_CLIENT, text: "Here, take the Guide Book. Page 3 if you get stuck."},
 			{type: STEP_SKIP_TUTORIAL, text: ""},
+			{type: STEP_CLIENT, text: "And remember: if the honest numbers say no, the answer is no."},
 			{type: STEP_END_VISIT, text: ""}
 		];
 	}
@@ -492,7 +488,7 @@ class ClientScenarios
 	public static function chefTutorialGuideBookSteps():Array<ClientConvStep>
 	{
 		return [
-			{type: STEP_CLIENT, text: "For the rest, we ask the client. Politely. From the official book."},
+			{type: STEP_CLIENT, text: "For the rest, we ask the client. From the official book. Close the terminal and I'll toss you my copy."},
 			{type: STEP_TUTORIAL_IDLE, text: ""}
 		];
 	}
@@ -501,7 +497,7 @@ class ClientScenarios
 	{
 		return [
 			{type: STEP_CLIENT, text: "Fair enough — didn't mean to hold you up."},
-			{type: STEP_CLIENT, text: "Handbook pages 33–35 cover the loan process. Pages 92–94 cover currency math."},
+			{type: STEP_CLIENT, text: "Here, take the Guide Book. Page 3 covers loans."},
 			{type: STEP_CLIENT, text: "I'll check in later. Good luck out there."},
 			{type: STEP_PREPARE_TUTORIAL_EXIT, text: ""},
 			{type: STEP_END_VISIT, text: ""}

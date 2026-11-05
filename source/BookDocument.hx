@@ -15,24 +15,28 @@ class BookDocument extends DeskDocument
 	static inline var OPEN_PATH = "static/opened_book.png";
 	static inline var ARROW_PATH = "static/arrow_right.png";
 	static inline var EMBLEM_PATH = "static/lorian_emblem.png";
-	static inline var OPEN_SIZE_MULTIPLIER = 7.0;
+	static inline var OPEN_SIZE_MULTIPLIER = 8.5;
 	static inline var CLOSED_WIDTH_RATIO = 0.25;
-	static inline var PAGE_COUNT = 200;
+	static inline var PAGE_COUNT = BookIntroPages.LAST_PAGE;
+	static inline var QUESTIONS_SPREAD = 2;
+	// Sits above the calculator so the page arrows stay clickable.
+	static inline var OPEN_CENTER_Y_RATIO = 0.34;
+	static inline var OPEN_CENTER_LEFT_SHIFT = 22.0;
 	static inline var COVER_TITLE_PRIMARY = "Cool Math Bank";
 	static inline var COVER_TITLE_SECONDARY = "Guide Book";
-	static inline var COVER_SUBTITLE = "There you can find everything you need";
+	static inline var COVER_SUBTITLE = "Read it. Follow it. Do not lend it.";
 	static inline var COVER_SPONSOR = "This guide is sponsored by Republic of Loria and was written in 1967 year";
 	static var TOC_LINK_LABELS = [
-		"Introduction",
+		"The Five Steps",
 		"Questions to ask",
-		"Quick Reference",
-		"Exchange Rates"
+		"The Verdict",
+		"Foreign Pay"
 	];
-	static var TOC_LINK_PAGES = [3, 31, 33, 92];
-	static var TOC_LINK_SPREADS = [1, 15, 16, 45];
+	static var TOC_LINK_PAGES = [3, 5, 7, 9];
+	static var TOC_LINK_SPREADS = [1, QUESTIONS_SPREAD, 3, 4];
 	static var TOC_SUBTITLES = [
-		{beforeLinkIndex: 0, text: "New Employees"},
-		{beforeLinkIndex: 2, text: "Loan Processing"}
+		{beforeLinkIndex: 0, text: "At the Counter"},
+		{beforeLinkIndex: 2, text: "The Numbers"}
 	];
 
 	// Cover page (left page of first spread). Positive bias shifts content toward the spine/right.
@@ -54,18 +58,18 @@ class BookDocument extends DeskDocument
 	static inline var TOC_HEADING_NY = 0.10;
 	static inline var TOC_LINK_NX0 = 0.03;
 	static inline var TOC_LINK_NX1 = 0.94;
-	static inline var TOC_BUTTON_FILL = 0x80345890;
-	static inline var TOC_BUTTON_FILL_HOVER = 0xAA4468A8;
-	static inline var TOC_BUTTON_BORDER = 0xCC142238;
-	static inline var TOC_BUTTON_BORDER_HOVER = 0xEE0E1A30;
+	static inline var TOC_BUTTON_FILL = 0x80705C44;
+	static inline var TOC_BUTTON_FILL_HOVER = 0xAA8A7255;
+	static inline var TOC_BUTTON_BORDER = 0xCC2A2118;
+	static inline var TOC_BUTTON_BORDER_HOVER = 0xEE1F1810;
 	static inline var TOC_LINK_TEXT_COLOR = 0xFFF0EEE8;
 	static inline var TOC_LINK_TEXT_HOVER = 0xFFFFF4D8;
 	static inline var TOC_LINK_PAGE_TEXT_COLOR = 0xFF000000;
 	static inline var TOC_LINK1_NY0 = 0.17;
 
 	// Navigation row near the bottom of each page; arrows sit toward the outer edges.
-	static inline var NAV_ROW_NY0 = 0.82;
-	static inline var NAV_ROW_NY1 = 0.92;
+	static inline var NAV_ROW_NY0 = 0.84;
+	static inline var NAV_ROW_NY1 = 0.93;
 	static inline var LEFT_ARROW_NX0 = 0.18;
 	static inline var LEFT_ARROW_NX1 = 0.32;
 	static inline var CONTENTS_BUTTON_NX0 = 0.34;
@@ -88,17 +92,10 @@ class BookDocument extends DeskDocument
 	static inline var INTRO_PAD_NX = 0.06;
 	static inline var INTRO_LEFT_PAD_NX = 0.15;
 	static inline var INTRO_RIGHT_PAD_NX = 0.12;
-	static inline var INTRO_IMAGE_MAX_H_RATIO = 0.30;
-	static inline var INTRO_IMAGE_MAX_H_RATIO_WITH_BODY = 0.22;
-	static inline var INTRO_TITLE_SIZE_RATIO = 0.034;
 	static inline var INTRO_BODY_SIZE_RATIO = 0.024;
-	static inline var INTRO_MIN_TITLE_SIZE = 11;
 	static inline var INTRO_MIN_BODY_SIZE = 10;
-	static inline var INTRO_MIN_CAPTION_SIZE = 9;
-	static inline var INTRO_TITLE_COLOR = 0xFF1E2838;
-	static inline var INTRO_BODY_COLOR = 0xFF2A2218;
-	static inline var INTRO_CAPTION_COLOR = 0xFF5A5048;
 	static inline var INTRO_SECTION_COLOR = 0xFF4A4438;
+	static inline var INTRO_BODY_COLOR = 0xFF2A2218;
 	static inline var INTRO_QUESTION_COLOR = 0xFF6B4423;
 	static inline var INTRO_SECTION_SIZE_RATIO = 0.03;
 	static inline var INTRO_MIN_SECTION_SIZE = 10;
@@ -682,12 +679,12 @@ class BookDocument extends DeskDocument
 
 	public function isOnQuestionsSpread():Bool
 	{
-		return spreadIndex == 15;
+		return spreadIndex == QUESTIONS_SPREAD;
 	}
 
 	public function openToQuestionsSpread():Void
 	{
-		spreadIndex = 15;
+		spreadIndex = QUESTIONS_SPREAD;
 		setOpen();
 		refreshDisplaySize();
 		refreshOverlaysNow();
@@ -727,53 +724,65 @@ class BookDocument extends DeskDocument
 		tocLinkHovered = -1;
 	}
 
-	public function slideOpenToEmployerTableCenter(?onComplete:Void->Void):Void
+	/** Chef tosses the closed book from the client window; it lands on the table and falls open. */
+	public function handOverOpenToEmployerTable(fromX:Float, fromY:Float, ?onComplete:Void->Void):Void
 	{
-		if (bookSlideTween != null)
-		{
-			bookSlideTween.cancel();
-			bookSlideTween = null;
-		}
-		FlxTween.cancelTweensOf(this);
-		dragging = false;
-		snapping = false;
-		scanLocked = false;
-		visible = true;
+		resetBookSlideState();
 		isBookSlideAnimating = true;
-		isBookSlideComplete = false;
 		slideAboveTableDocs = true;
-		spreadIndex = 0;
+		visible = false;
+		activeZone = None;
 
-		activeZone = EmployerTable;
+		// Measure the open book so the flight ends exactly where it will lie.
 		setOpen();
 		refreshDisplaySize();
+		var openW = width;
+		var openH = height;
+		var targetX = openCenterX() - openW * 0.5;
+		var targetY = openCenterY() - openH * 0.5;
+		var landedW = openW * 0.5;
+		var landedH = landedW * (1281 / 995);
 
-		var endCenterX = zones.employerX + zones.employerW * 0.5;
-		var endCenterY = zones.employerTableY + zones.employerTableH * 0.5;
-		var targetX = endCenterX - width * 0.5;
-		var targetY = endCenterY - height * 0.5;
-		setPosition(FlxG.width + width, targetY);
-		notifyDrawLayerChanged();
+		Juice.sfx(Juice.SFX_WHOOSH, 0.6);
+		Juice.flyProp(CLOSED_PATH, fromX, fromY, closedDisplayWidth, targetX + (openW - landedW) * 0.5, targetY + (openH - landedH) * 0.5, landedW, 0.55, 80, function()
+		{
+			Juice.sfx(Juice.SFX_THUMP, 0.9);
+			Juice.sfx(Juice.SFX_PAGE, 0.7);
+			Juice.shake(0.004, 0.14);
+			Juice.burst(targetX + openW * 0.5, targetY + openH * 0.9, [0xFFB8A888, 0xFF8A8070], 12, 130, 0.5, 3, 200);
 
-		bookSlideTween = FlxTween.tween(this, {
-			x: targetX,
-			y: targetY
-		}, 0.75, {
-			ease: FlxEase.quadOut,
-			onComplete: function(_)
-			{
-				bookSlideTween = null;
-				setPosition(endCenterX - width * 0.5, endCenterY - height * 0.5);
-				updateEmployerTableClip();
-				refreshOverlaysNow();
-				isBookSlideAnimating = false;
-				isBookSlideComplete = true;
-				slideAboveTableDocs = false;
-				notifyDrawLayerChanged();
-				if (onComplete != null)
-					onComplete();
-			}
+			visible = true;
+			activeZone = EmployerTable;
+			setPosition(targetX, targetY);
+			notifyDrawLayerChanged();
+			updateEmployerTableClip();
+			refreshOverlaysNow();
+			isBookSlideAnimating = false;
+			isBookSlideComplete = true;
+			slideAboveTableDocs = false;
+			notifyDrawLayerChanged();
+			if (onComplete != null)
+				onComplete();
 		});
+	}
+
+	// Nudged left of centre, clear of the plant in the corner.
+	function openCenterX():Float
+	{
+		return zones.employerX + zones.employerW * 0.5 - OPEN_CENTER_LEFT_SHIFT;
+	}
+
+	function openCenterY():Float
+	{
+		return zones.employerTableY + zones.employerTableH * OPEN_CENTER_Y_RATIO;
+	}
+
+	override public function placeOpenOnEmployerTableCenter():Void
+	{
+		super.placeOpenOnEmployerTableCenter();
+		x = openCenterX() - width * 0.5;
+		y = openCenterY() - height * 0.5;
+		updateEmployerTableClip();
 	}
 
 	public function getTutorialHighlight(kind:String):Null<TutorialGuideRect>
@@ -1089,8 +1098,7 @@ class BookDocument extends DeskDocument
 				var lockedLink = pointInTocLinkRegion(point);
 				if (lockedLink == allowedTocLinkIndex && lockedLink >= 0 && lockedLink < TOC_LINK_SPREADS.length)
 				{
-					spreadIndex = TOC_LINK_SPREADS[lockedLink];
-					updateOverlays();
+					turnToSpread(TOC_LINK_SPREADS[lockedLink]);
 					return true;
 				}
 			}
@@ -1102,34 +1110,44 @@ class BookDocument extends DeskDocument
 			var linkIndex = pointInTocLinkRegion(point);
 			if (linkIndex >= 0 && linkIndex < TOC_LINK_SPREADS.length)
 			{
-				spreadIndex = TOC_LINK_SPREADS[linkIndex];
-				updateOverlays();
+				turnToSpread(TOC_LINK_SPREADS[linkIndex]);
 				return true;
 			}
 		}
 
 		if (canGoForward() && pointInForwardArrowRegion(point))
 		{
-			spreadIndex++;
-			updateOverlays();
+			turnToSpread(spreadIndex + 1);
 			return true;
 		}
 
 		if (canGoBack() && pointInBackArrowRegion(point))
 		{
-			spreadIndex--;
-			updateOverlays();
+			turnToSpread(spreadIndex - 1);
 			return true;
 		}
 
 		if (shouldShowContentsNav() && pointInContentsNavRegion(point))
 		{
-			spreadIndex = 0;
-			updateOverlays();
+			turnToSpread(0);
 			return true;
 		}
 
 		return false;
+	}
+
+	function turnToSpread(index:Int):Void
+	{
+		spreadIndex = index;
+		Juice.sfx(Juice.SFX_PAGE, 0.8, 0.1);
+		updateOverlays();
+		// The new page settles in rather than popping.
+		for (page in [leftIntroImage, rightIntroImage])
+		{
+			FlxTween.cancelTweensOf(page);
+			page.alpha = 0.25;
+			FlxTween.tween(page, {alpha: 1}, 0.16);
+		}
 	}
 
 	function pointInContentsNavRegion(point:FlxPoint):Bool
@@ -1853,151 +1871,54 @@ class BookDocument extends DeskDocument
 		bulletTexts:Array<FlxText>
 	):Void
 	{
-		var content = BookIntroPages.getSide(pageNum);
-		if (content == null)
+		title.visible = false;
+		body.visible = false;
+		caption.visible = false;
+
+		var sx = Math.abs(scale.x);
+		var sy = Math.abs(scale.y);
+		var halfW = frameWidth * 0.5;
+		var pageX0 = rightPage ? halfW : 0.0;
+		var padLeft = rightPage ? INTRO_PAD_NX : INTRO_LEFT_PAD_NX;
+		var padRight = rightPage ? INTRO_RIGHT_PAD_NX : INTRO_PAD_NX;
+		var contentX = x + (pageX0 + halfW * padLeft) * sx;
+		var contentW = Std.int(halfW * (1.0 - padLeft - padRight) * sx);
+		var contentY = y + frameHeight * INTRO_CONTENT_TOP_NY * sy;
+		var contentBottom = y + frameHeight * (NAV_ROW_NY0 - INTRO_CONTENT_NAV_GAP_NY) * sy;
+		var canvas = BookPageCanvas.render(pageNum, contentW, Std.int(contentBottom - contentY));
+		if (canvas == null)
 		{
-			title.visible = false;
-			body.visible = false;
-			caption.visible = false;
 			image.visible = false;
-			title.clipRect = null;
-			body.clipRect = null;
-			caption.clipRect = null;
 			image.clipRect = null;
 			hideBulletTexts(bulletTexts);
 			return;
 		}
 
+		image.loadGraphic(canvas);
+		image.scale.set(1, 1);
+		image.updateHitbox();
+		image.setPosition(contentX, contentY);
+		image.angle = angle;
+		image.visible = true;
+		syncIntroOverlayClip(image, x + pageX0 * sx, x + (pageX0 + halfW) * sx, contentBottom);
+
 		if (BookIntroPages.hasBulletList(pageNum))
 		{
-			var bulletTags = rightPage ? rightBulletTags : leftBulletTags;
-			layoutBulletListSide(rightPage, pageNum, title, body, caption, image, bulletTexts, bulletTags, content.title);
+			layoutBulletListSide(rightPage, pageNum, bulletTexts, rightPage ? rightBulletTags : leftBulletTags);
 			return;
 		}
 
 		clearBulletTags(rightPage ? rightBulletTags : leftBulletTags);
 		hideBulletTexts(bulletTexts);
-
-		var sx = Math.abs(scale.x);
-		var sy = Math.abs(scale.y);
-		var halfW = frameWidth * 0.5;
-		var pageX0 = rightPage ? halfW : 0.0;
-		var padLeft = rightPage ? INTRO_PAD_NX : INTRO_LEFT_PAD_NX;
-		var padRight = rightPage ? INTRO_RIGHT_PAD_NX : INTRO_PAD_NX;
-		var contentX = x + (pageX0 + halfW * padLeft) * sx;
-		var contentW = halfW * (1.0 - padLeft - padRight) * sx;
-		var pageLeft = x + pageX0 * sx;
-		var pageRight = x + (pageX0 + halfW) * sx;
-		var cursorY = y + frameHeight * INTRO_CONTENT_TOP_NY * sy;
-		var contentBottom = y + frameHeight * (NAV_ROW_NY0 - INTRO_CONTENT_NAV_GAP_NY) * sy;
-		var bodySize = Std.int(Math.max(INTRO_MIN_BODY_SIZE, frameHeight * sy * INTRO_BODY_SIZE_RATIO));
-
-		var titleSize = Std.int(Math.max(INTRO_MIN_TITLE_SIZE, frameHeight * sy * INTRO_TITLE_SIZE_RATIO));
-		title.text = content.title;
-		title.setFormat(null, titleSize, INTRO_TITLE_COLOR, "left");
-		title.setBorderStyle(NONE, 0x00000000, 0);
-		title.bold = true;
-		title.italic = false;
-		title.fieldWidth = contentW;
-		title.autoSize = false;
-		title.height = titleSize + 6;
-		title.updateHitbox();
-		title.setPosition(contentX, cursorY);
-		title.visible = true;
-		syncIntroOverlayClip(title, pageLeft, pageRight, contentBottom);
-		cursorY += title.height + titleSize * 0.4;
-
-		if (content.imagePath != null && content.imagePath.length > 0)
-		{
-			image.loadGraphic(content.imagePath);
-			var hasBody = content.body.length > 0;
-			var imageMaxRatio = hasBody ? INTRO_IMAGE_MAX_H_RATIO_WITH_BODY : INTRO_IMAGE_MAX_H_RATIO;
-			var maxImageH = frameHeight * imageMaxRatio * sy;
-			if (hasBody)
-			{
-				var bodyNeed = measureIntroBodyHeight(body, content.body, contentW, bodySize);
-				var remaining = contentBottom - cursorY - bodyNeed - bodySize * 0.5;
-				if (remaining > bodySize * 2)
-					maxImageH = Math.min(maxImageH, remaining);
-				else
-					maxImageH = Math.min(maxImageH, Math.max(bodySize * 4, remaining));
-			}
-			maxImageH = Math.max(bodySize * 3, maxImageH);
-			var maxImageW = contentW;
-			var aspect = image.frameHeight > 0 ? image.frameWidth / image.frameHeight : 1.0;
-			var imageW = maxImageW;
-			var imageH = imageW / aspect;
-			if (imageH > maxImageH)
-			{
-				imageH = maxImageH;
-				imageW = imageH * aspect;
-			}
-			image.setGraphicSize(Std.int(Math.max(1, imageW)), Std.int(Math.max(1, imageH)));
-			image.updateHitbox();
-			image.setPosition(contentX + (contentW - imageW) * 0.5, cursorY);
-			image.angle = angle;
-			image.visible = true;
-			syncIntroOverlayClip(image, pageLeft, pageRight, contentBottom);
-			cursorY += imageH + titleSize * 0.3;
-
-			var captionSize = Std.int(Math.max(INTRO_MIN_CAPTION_SIZE, titleSize - 1));
-			caption.text = content.imageCaption != null ? content.imageCaption : "";
-			caption.setFormat(null, captionSize, INTRO_CAPTION_COLOR, "center");
-			caption.setBorderStyle(NONE, 0x00000000, 0);
-			caption.bold = false;
-			caption.italic = true;
-			caption.fieldWidth = contentW;
-			caption.autoSize = false;
-			caption.height = captionSize + 4;
-			caption.updateHitbox();
-			caption.setPosition(contentX, cursorY);
-			caption.visible = content.imageCaption != null && content.imageCaption.length > 0;
-			syncIntroOverlayClip(caption, pageLeft, pageRight, contentBottom);
-			cursorY += caption.visible ? caption.height + captionSize * 0.4 : 0;
-		}
-		else
-		{
-			image.visible = false;
-			image.clipRect = null;
-			caption.visible = false;
-			caption.clipRect = null;
-		}
-
-		var availableH = Math.max(bodySize + 4, contentBottom - cursorY);
-		body.text = content.body;
-		body.setFormat(null, bodySize, INTRO_BODY_COLOR, "left");
-		body.setBorderStyle(NONE, 0x00000000, 0);
-		body.bold = false;
-		body.italic = false;
-		body.fieldWidth = contentW;
-		body.autoSize = false;
-		var textH = measureIntroBodyHeight(body, content.body, contentW, bodySize);
-		body.height = Math.min(textH + bodySize * 0.25, availableH);
-		body.updateHitbox();
-		body.setPosition(contentX, cursorY);
-		body.visible = content.body.length > 0;
-		syncIntroOverlayClip(body, pageLeft, pageRight, contentBottom);
 	}
 
 	function layoutBulletListSide(
 		rightPage:Bool,
 		pageNum:Int,
-		title:FlxText,
-		body:FlxText,
-		caption:FlxText,
-		image:FlxSprite,
 		bulletTexts:Array<FlxText>,
-		bulletTags:Array<Null<String>>,
-		pageTitle:String
+		bulletTags:Array<Null<String>>
 	):Void
 	{
-		body.visible = false;
-		body.clipRect = null;
-		caption.visible = false;
-		caption.clipRect = null;
-		image.visible = false;
-		image.clipRect = null;
-
 		var sx = Math.abs(scale.x);
 		var sy = Math.abs(scale.y);
 		var halfW = frameWidth * 0.5;
@@ -2008,28 +1929,13 @@ class BookDocument extends DeskDocument
 		var contentW = halfW * (1.0 - padLeft - padRight) * sx;
 		var pageLeft = x + pageX0 * sx;
 		var pageRight = x + (pageX0 + halfW) * sx;
-		var cursorY = y + frameHeight * INTRO_CONTENT_TOP_NY * sy;
+		var cursorY = y + frameHeight * INTRO_CONTENT_TOP_NY * sy + BookPageCanvas.HEADER_H;
 		var contentBottom = y + frameHeight * (NAV_ROW_NY0 - INTRO_CONTENT_NAV_GAP_NY) * sy;
 		var bodySize = Std.int(Math.max(INTRO_MIN_BODY_SIZE, frameHeight * sy * INTRO_BODY_SIZE_RATIO));
-		var titleSize = Std.int(Math.max(INTRO_MIN_TITLE_SIZE, frameHeight * sy * INTRO_TITLE_SIZE_RATIO));
 		var sectionSize = Std.int(Math.max(INTRO_MIN_SECTION_SIZE, frameHeight * sy * INTRO_SECTION_SIZE_RATIO));
 		var bulletGap = bodySize * 0.45;
 		var sectionGap = bodySize * 0.35;
 		var sectionTopGap = bodySize * 0.65;
-
-		title.text = pageTitle;
-		title.setFormat(null, titleSize, INTRO_TITLE_COLOR, "left");
-		title.setBorderStyle(NONE, 0x00000000, 0);
-		title.bold = true;
-		title.italic = false;
-		title.fieldWidth = contentW;
-		title.autoSize = false;
-		title.height = titleSize + 6;
-		title.updateHitbox();
-		title.setPosition(contentX, cursorY);
-		title.visible = true;
-		syncIntroOverlayClip(title, pageLeft, pageRight, contentBottom);
-		cursorY += title.height + titleSize * 0.5;
 
 		var bullets = filterBullets(BookIntroPages.getBullets(pageNum));
 		clearBulletTags(bulletTags);

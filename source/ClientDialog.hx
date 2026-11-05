@@ -6,6 +6,8 @@ import flixel.FlxSprite;
 import flixel.group.FlxGroup;
 import flixel.math.FlxPoint;
 import flixel.text.FlxText;
+import flixel.tweens.FlxEase;
+import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
 import openfl.geom.Rectangle;
 
@@ -117,6 +119,10 @@ class ClientDialog extends FlxGroup
 	var playerChars:Int = 0;
 	var playerTimer:Float = 0;
 	var playerFadeTimer:Float = -1;
+	var playerBw:Int = 0;
+	var playerBh:Int = 0;
+	var hoveredChoice:Int = -1;
+	var scanChoiceHovered:Bool = false;
 
 	var convPhase:Int = CONV_NONE;
 	var convTimer:Float = 0;
@@ -192,7 +198,7 @@ class ClientDialog extends FlxGroup
 			var bg = new FlxSprite();
 			bg.visible = false;
 			var txt = new FlxText(0, 0, maxTextW, "");
-			txt.setFormat(null, fontSize, FlxColor.fromRGB(220, 230, 245), "left");
+			txt.setFormat(null, fontSize, UiSkin.INK, "left");
 			txt.wordWrap = true;
 			txt.visible = false;
 			add(bg);
@@ -217,7 +223,7 @@ class ClientDialog extends FlxGroup
 			var cbg = new FlxSprite();
 			cbg.visible = false;
 			var ctxt = new FlxText(0, 0, 0, "");
-			ctxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 195, 140), "center");
+			ctxt.setFormat(null, choiceFontSize, UiSkin.INK, "center");
 			ctxt.wordWrap = true;
 			ctxt.visible = false;
 			add(cbg);
@@ -229,7 +235,7 @@ class ClientDialog extends FlxGroup
 		playerBg = new FlxSprite();
 		playerBg.visible = false;
 		playerTxt = new FlxText(0, 0, maxTextW, "");
-		playerTxt.setFormat(null, fontSize, FlxColor.fromRGB(210, 235, 210), "left");
+		playerTxt.setFormat(null, fontSize, FlxColor.WHITE, "left");
 		playerTxt.wordWrap = true;
 		playerTxt.visible = false;
 		add(playerBg);
@@ -238,7 +244,7 @@ class ClientDialog extends FlxGroup
 		scanChoiceBg = new FlxSprite();
 		scanChoiceBg.visible = false;
 		scanChoiceTxt = new FlxText(0, 0, 0, "");
-		scanChoiceTxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 195, 140), "center");
+		scanChoiceTxt.setFormat(null, choiceFontSize, UiSkin.INK, "center");
 		scanChoiceTxt.wordWrap = true;
 		scanChoiceTxt.visible = false;
 		add(scanChoiceBg);
@@ -247,7 +253,7 @@ class ClientDialog extends FlxGroup
 		giveBackHintBg = new FlxSprite();
 		giveBackHintBg.visible = false;
 		giveBackHintTxt = new FlxText(0, 0, 0, "Give back");
-		giveBackHintTxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 220, 150), "center");
+		giveBackHintTxt.setFormat(null, choiceFontSize, UiSkin.INK, "center");
 		giveBackHintTxt.visible = false;
 		add(giveBackHintBg);
 		add(giveBackHintTxt);
@@ -624,6 +630,7 @@ class ClientDialog extends FlxGroup
 		txtArr[slot].visible = true;
 		bgArr[slot].alpha = 1.0;
 		txtArr[slot].alpha = 1.0;
+		popIn(bgArr[slot], txtArr[slot]);
 
 		order.push(slot);
 		typingSlot = slot;
@@ -662,6 +669,18 @@ class ClientDialog extends FlxGroup
 		playerTxt.visible = true;
 		playerBg.alpha = 1.0;
 		playerTxt.alpha = 1.0;
+		popIn(playerBg, playerTxt);
+	}
+
+	/** New bubbles and buttons spring in from slightly smaller instead of just appearing. */
+	function popIn(bg:FlxSprite, txt:FlxText, ?delay:Float = 0):Void
+	{
+		for (s in [bg, (txt : FlxSprite)])
+		{
+			FlxTween.cancelTweensOf(s.scale);
+			s.scale.set(0.55, 0.55);
+			FlxTween.tween(s.scale, {x: 1, y: 1}, 0.24, {ease: FlxEase.backOut, startDelay: delay});
+		}
 	}
 
 	function beginNextMessage():Void
@@ -724,8 +743,7 @@ class ClientDialog extends FlxGroup
 		bwArr[slot] = bw;
 		bhArr[slot] = bh;
 
-		bgArr[slot].makeGraphic(bw, bh, FlxColor.fromRGB(12, 18, 28), true);
-		drawBorder(bgArr[slot], bw, bh, FlxColor.BLACK);
+		UiSkin.bubble(bgArr[slot], bw, bh, UiSkin.CREAM, UiSkin.INK, true);
 	}
 
 	function sizePlayerBubble(chars:Int):Void
@@ -739,14 +757,15 @@ class ClientDialog extends FlxGroup
 		var numLines = Std.int(Math.max(2, Math.ceil(estW / wrapW)));
 		var bh = numLines * lineH + BUBBLE_PAD * 2;
 
-		playerBg.makeGraphic(bw, bh, FlxColor.fromRGB(14, 28, 18), true);
-		drawBorder(playerBg, bw, bh, FlxColor.BLACK);
+		playerBw = bw;
+		playerBh = bh;
+		UiSkin.bubble(playerBg, bw, bh, UiSkin.ACCENT, UiSkin.PANEL_DEEP, false);
 	}
 
 	function placeBubble(slot:Int):Void
 	{
 		var bx = Std.int(areaRight - bwArr[slot] - BUBBLE_MARGIN);
-		bgArr[slot].x = bx;
+		bgArr[slot].x = bx - UiSkin.TAIL_W;
 		bgArr[slot].y = yArr[slot];
 		txtArr[slot].x = bx + BUBBLE_PAD;
 		txtArr[slot].y = yArr[slot] + BUBBLE_PAD;
@@ -754,8 +773,8 @@ class ClientDialog extends FlxGroup
 
 	function placePlayerBubble():Void
 	{
-		var bw = Std.int(playerBg.width);
-		var bh = Std.int(playerBg.height);
+		var bw = playerBw;
+		var bh = playerBh;
 		var bx = Std.int(areaRight - bw - BUBBLE_MARGIN);
 		var by = Std.int(areaBottom - bh - BUBBLE_MARGIN);
 		playerBg.x = bx;
@@ -925,12 +944,14 @@ class ClientDialog extends FlxGroup
 		if (cy < areaTop + BUBBLE_MARGIN)
 			cy = areaTop + BUBBLE_MARGIN;
 
-		giveBackHintBg.makeGraphic(choiceW, choiceH, FlxColor.fromRGB(28, 42, 34), true);
-		drawBorder(giveBackHintBg, choiceW, choiceH, FlxColor.fromRGB(90, 150, 100));
+		if (Std.int(giveBackHintBg.width) != choiceW || Std.int(giveBackHintBg.height) != choiceH)
+			UiSkin.panel(giveBackHintBg, choiceW - UiSkin.SHADOW_OFFSET, choiceH - UiSkin.SHADOW_OFFSET, UiSkin.TRIM, UiSkin.INK);
+		// Gentle bob so the hint reads as "do this now".
+		cy += Math.sin(FlxG.game.ticks / 1000 * 5) * 2;
 		giveBackHintBg.setPosition(cx, cy);
 		giveBackHintBg.visible = true;
 
-		giveBackHintTxt.setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 220, 150), "center");
+		giveBackHintTxt.setFormat(null, choiceFontSize, UiSkin.INK, "center");
 		giveBackHintTxt.setSize(txtW, txtH);
 		giveBackHintTxt.setPosition(cx + CHOICE_PAD, cy + CHOICE_PAD);
 		giveBackHintTxt.visible = true;
@@ -1245,6 +1266,7 @@ class ClientDialog extends FlxGroup
 	{
 		dialogueChoiceMade = true;
 		choiceAvail[idx] = false;
+		Juice.sfx(Juice.SFX_PICKUP, 0.6, 0.08);
 		hideChoices();
 
 		if (tutorialChoiceLabels != null)
@@ -1418,6 +1440,13 @@ class ClientDialog extends FlxGroup
 		hidePlayerBubble();
 		choicesVisible = true;
 		layoutChoices();
+
+		var n = 0;
+		for (i in 0...NUM_CHOICES)
+			if (choiceBg[i].visible)
+				popIn(choiceBg[i], choiceTxt[i], 0.05 * n++);
+		if (scanChoiceVisible && scanChoiceBg.visible)
+			popIn(scanChoiceBg, scanChoiceTxt, 0.05 * n);
 	}
 
 	function clearConversationLog():Void
@@ -1447,6 +1476,7 @@ class ClientDialog extends FlxGroup
 	function hideChoices():Void
 	{
 		choicesVisible = false;
+		hoveredChoice = -1;
 		for (i in 0...NUM_CHOICES)
 		{
 			choiceBg[i].visible = false;
@@ -1458,6 +1488,7 @@ class ClientDialog extends FlxGroup
 	{
 		scanChoiceVisible = false;
 		scanChoiceInScanMode = false;
+		scanChoiceHovered = false;
 		scanChoiceBg.visible = false;
 		scanChoiceTxt.visible = false;
 	}
@@ -1496,12 +1527,12 @@ class ClientDialog extends FlxGroup
 	function placeScanChoiceButton(choiceW:Int, maxH:Int, baseY:Float, cx:Float, txtW:Int, cAvgW:Float):Void
 	{
 		var inScan = ScanModeOverlay.isScanModeActive();
-		var bgColor = inScan ? FlxColor.fromRGB(72, 18, 18) : FlxColor.fromRGB(12, 18, 28);
+		var bgColor = inScan ? UiSkin.STAMP_RED : UiSkin.TRIM;
 		var label = inScan ? "Actually, nevermind..." : "Let me ask you...";
-		var textColor = inScan ? FlxColor.fromRGB(235, 185, 185) : FlxColor.fromRGB(180, 195, 140);
+		var textColor:FlxColor = inScan ? UiSkin.CREAM : UiSkin.INK;
 
-		scanChoiceBg.makeGraphic(choiceW, maxH, bgColor, true);
-		drawBorder(scanChoiceBg, choiceW, maxH, FlxColor.BLACK);
+		UiSkin.panel(scanChoiceBg, choiceW - UiSkin.SHADOW_OFFSET, maxH - UiSkin.SHADOW_OFFSET, bgColor, UiSkin.INK);
+		scanChoiceBg.color = FlxColor.WHITE;
 		scanChoiceBg.x = cx;
 		scanChoiceBg.y = baseY;
 		scanChoiceBg.visible = true;
@@ -1526,7 +1557,7 @@ class ClientDialog extends FlxGroup
 
 		var cAvgW = choiceFontSize * 0.55;
 		var cLineH = choiceFontSize + 2;
-		var maxH = cLineH * 2 + CHOICE_PAD * 2;
+		var maxH = cLineH * 2 + CHOICE_PAD * 2 + UiSkin.SHADOW_OFFSET + 3;
 
 		var baseY = areaBottom - maxH - BUBBLE_MARGIN;
 		placeScanChoiceButton(choiceW, maxH, baseY, BUBBLE_MARGIN, txtW, cAvgW);
@@ -1566,10 +1597,26 @@ class ClientDialog extends FlxGroup
 		var my = FlxG.mouse.y;
 		var bg = scanChoiceBg;
 		var hovered = mx >= bg.x && mx < bg.x + bg.width && my >= bg.y && my < bg.y + bg.height;
-		if (ScanModeOverlay.isScanModeActive())
-			scanChoiceTxt.color = hovered ? FlxColor.fromRGB(255, 220, 220) : FlxColor.fromRGB(235, 185, 185);
-		else
-			scanChoiceTxt.color = hovered ? FlxColor.fromRGB(255, 255, 180) : FlxColor.fromRGB(180, 195, 140);
+		if (hovered != scanChoiceHovered)
+		{
+			scanChoiceHovered = hovered;
+			if (hovered)
+				hoverFeedback(scanChoiceBg, scanChoiceTxt);
+		}
+		scanChoiceBg.color = hovered ? HOVER_TINT : FlxColor.WHITE;
+	}
+
+	static inline var HOVER_TINT = UiSkin.HOVER_TINT;
+
+	function hoverFeedback(bg:FlxSprite, txt:FlxText):Void
+	{
+		Juice.blip();
+		for (s in [bg, (txt : FlxSprite)])
+		{
+			FlxTween.cancelTweensOf(s.scale);
+			s.scale.set(1.05, 1.05);
+			FlxTween.tween(s.scale, {x: 1, y: 1}, 0.18, {ease: FlxEase.quadOut});
+		}
 	}
 
 	function layoutChoices():Void
@@ -1604,7 +1651,7 @@ class ClientDialog extends FlxGroup
 
 		var cAvgW = choiceFontSize * 0.55;
 		var cLineH = choiceFontSize + 2;
-		var maxH = cLineH * 2 + CHOICE_PAD * 2;
+		var maxH = cLineH * 2 + CHOICE_PAD * 2 + UiSkin.SHADOW_OFFSET + 3;
 		choiceRowH = maxH;
 
 		var baseY = areaBottom - maxH - BUBBLE_MARGIN;
@@ -1618,8 +1665,8 @@ class ClientDialog extends FlxGroup
 				continue;
 			}
 
-			choiceBg[i].makeGraphic(choiceW, maxH, FlxColor.fromRGB(12, 18, 28), true);
-			drawBorder(choiceBg[i], choiceW, maxH, FlxColor.BLACK);
+			UiSkin.panel(choiceBg[i], choiceW - UiSkin.SHADOW_OFFSET, maxH - UiSkin.SHADOW_OFFSET, UiSkin.CREAM, UiSkin.PANEL);
+			choiceBg[i].color = FlxColor.WHITE;
 			choiceBg[i].x = cx;
 			choiceBg[i].y = baseY;
 			choiceBg[i].visible = true;
@@ -1627,7 +1674,7 @@ class ClientDialog extends FlxGroup
 
 			choiceTxt[i].fieldWidth = txtW;
 			choiceTxt[i].text = toTwoLineChoice(getChoiceLabel(i), txtW, cAvgW);
-			choiceTxt[i].setFormat(null, choiceFontSize, FlxColor.fromRGB(180, 195, 140), "center");
+			choiceTxt[i].setFormat(null, choiceFontSize, UiSkin.INK, "center");
 			choiceTxt[i].x = cx + CHOICE_PAD;
 			choiceTxt[i].y = baseY + CHOICE_PAD;
 			choiceTxt[i].visible = true;
@@ -1720,6 +1767,7 @@ class ClientDialog extends FlxGroup
 
 		var mx = FlxG.mouse.x;
 		var my = FlxG.mouse.y;
+		var hoverNow = -1;
 
 		for (i in 0...NUM_CHOICES)
 		{
@@ -1727,7 +1775,16 @@ class ClientDialog extends FlxGroup
 				continue;
 			var bg = choiceBg[i];
 			var hovered = mx >= bg.x && mx < bg.x + bg.width && my >= bg.y && my < bg.y + bg.height;
-			choiceTxt[i].color = hovered ? FlxColor.fromRGB(255, 255, 180) : FlxColor.fromRGB(180, 195, 140);
+			bg.color = hovered ? HOVER_TINT : FlxColor.WHITE;
+			if (hovered)
+				hoverNow = i;
+		}
+
+		if (hoverNow != hoveredChoice)
+		{
+			hoveredChoice = hoverNow;
+			if (hoverNow >= 0)
+				hoverFeedback(choiceBg[hoverNow], choiceTxt[hoverNow]);
 		}
 	}
 

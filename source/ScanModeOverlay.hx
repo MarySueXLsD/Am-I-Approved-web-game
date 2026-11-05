@@ -204,7 +204,7 @@ class ScanModeOverlay extends FlxGroup
 	{
 		hintGraphic.makeGraphic(size, size, FlxColor.TRANSPARENT, true);
 		var px = hintGraphic.pixels;
-		var fill = 0xCC3A4654;
+		var fill = 0xCC4A4238;
 		var line = 0xFFE8ECF2;
 
 		for (py in 0...size)

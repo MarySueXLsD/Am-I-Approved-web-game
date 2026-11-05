@@ -10,6 +10,7 @@ import flixel.text.FlxText.FlxTextBorderStyle;
 import flixel.tweens.FlxEase;
 import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
+import openfl.geom.Rectangle;
 
 typedef MainMenuItem =
 {
@@ -18,22 +19,27 @@ typedef MainMenuItem =
 	action:Void->Void,
 	hit:FlxSprite,
 	text:FlxText,
+	bg:FlxSprite,
 	hoverTween:FlxTween,
 	layoutX:Float,
 	layoutY:Float,
 	layoutW:Float,
+	layoutH:Float,
+	slideX:Float,
 }
 
 class MainMenuOverlay extends FlxGroup
 {
-	static inline var SIDEBAR_RATIO = 0.26;
-	static inline var SIDEBAR_ALPHA = 0.72;
-	static inline var ITEM_COLOR = 0xFFF4E4C4;
-	static inline var ITEM_HOVER = 0xFFE8C878;
-	static inline var ITEM_DISABLED = 0xFF7A7068;
-	static inline var TITLE_COLOR = 0xFFE8C878;
-	static inline var GOLD_LINE = 0xFFD4AF6A;
-	static inline var HOVER_SCALE = 1.06;
+	static inline var SIDEBAR_RATIO = 0.27;
+	static inline var CARD_MARGIN = 12;
+	static inline var DEMO_BADGE_W = 60;
+	static inline var DEMO_BADGE_H = 24;
+	static inline var DEMO_BADGE_ANGLE = 8.0;
+	static inline var ITEM_COLOR = UiSkin.INK;
+	static inline var ITEM_HOVER = UiSkin.PANEL_DEEP;
+	static inline var ITEM_DISABLED = UiSkin.MUTED;
+	static inline var HOVER_TINT = UiSkin.HOVER_TINT;
+	static inline var HOVER_SCALE = 1.08;
 	static inline var HOVER_TWEEN_DURATION = 0.14;
 	static inline var INTRO_FADE_DURATION = 0.9;
 	static inline var NEW_GAME_FADE_TO_BLACK = 0.9;
@@ -77,6 +83,18 @@ class MainMenuOverlay extends FlxGroup
 	var titleOrnament:FlxSprite;
 	var titleLine1:FlxText;
 	var titleLine2:FlxText;
+	var demoBadge:FlxSprite;
+	var demoLabel:FlxText;
+	var footerText:FlxText;
+	var titleStampBaseAngle = -7.0;
+	var titlePlateBaseY = 0.0;
+	var titleLine1BaseY = 0.0;
+	var titleLine2BaseY = 0.0;
+	var demoBadgeBaseY = 0.0;
+	var demoLabelBaseY = 0.0;
+	var titleStampLanded = false;
+	var idleTime = 0.0;
+	var introTweens:Array<FlxTween> = [];
 	var menuItems:Array<MainMenuItem> = [];
 	var creditsPopup:MainMenuCreditsPopup;
 	var optionsPopup:MainMenuOptionsPopup;
@@ -123,12 +141,19 @@ class MainMenuOverlay extends FlxGroup
 		add(titleOrnament);
 
 		titleLine1 = new FlxText(0, 0, 200, "Am I");
-		titleLine2 = new FlxText(0, 0, 200, "approved?");
+		titleLine2 = new FlxText(0, 0, 200, "APPROVED?");
 		add(titleLine1);
 		add(titleLine2);
 
+		demoBadge = new FlxSprite();
+		add(demoBadge);
+		demoLabel = new FlxText(0, 0, DEMO_BADGE_W, "DEMO");
+		add(demoLabel);
+
+		footerText = new FlxText(0, 0, 200, "");
+		add(footerText);
+
 		addMenuItem("New Game", true, startNewGame);
-		addMenuItem("Load Game", false, null);
 		addMenuItem("Options", true, openOptions);
 		addMenuItem("Credits", true, openCredits);
 
@@ -176,6 +201,78 @@ class MainMenuOverlay extends FlxGroup
 			blackScreen.visible = false;
 			blackScreen.alpha = 0;
 		}
+
+		playIntro(fadeFromBlack ? INTRO_FADE_DURATION * 0.6 : 0.05);
+	}
+
+	/** Buttons slide in one after another, then the APPROVED? stamp slams onto the title plate. */
+	function playIntro(delay:Float):Void
+	{
+		cancelIntroTweens();
+		titleStampLanded = false;
+		idleTime = 0;
+
+		for (i in 0...menuItems.length)
+		{
+			var item = menuItems[i];
+			item.slideX = FlxG.width * 0.35;
+			syncItemScalePosition(item);
+			introTweens.push(FlxTween.tween(item, {slideX: 0}, 0.42, {
+				ease: FlxEase.backOut,
+				startDelay: delay + 0.08 * i,
+				onUpdate: function(_) syncItemScalePosition(item),
+				onComplete: function(_) syncItemScalePosition(item)
+			}));
+		}
+
+		titleLine2.alpha = 0;
+		titleLine2.scale.set(2.6, 2.6);
+		titleLine2.angle = titleStampBaseAngle - 10;
+		demoBadge.alpha = 0;
+		demoLabel.alpha = 0;
+		var stampDelay = delay + 0.08 * menuItems.length + 0.2;
+		introTweens.push(FlxTween.tween(titleLine2, {alpha: 1, angle: titleStampBaseAngle}, 0.16, {
+			ease: FlxEase.quadIn,
+			startDelay: stampDelay
+		}));
+		introTweens.push(FlxTween.tween(titleLine2.scale, {x: 1, y: 1}, 0.16, {
+			ease: FlxEase.quadIn,
+			startDelay: stampDelay,
+			onComplete: function(_)
+			{
+				titleStampLanded = true;
+				demoBadge.alpha = 1;
+				demoLabel.alpha = 1;
+				if (!isShowing)
+					return;
+				Juice.sfx(Juice.SFX_STAMP, 0.8);
+				Juice.shake(0.005, 0.15);
+				Juice.burst(titleLine2.x + titleLine2.width * 0.5, titleLine2.y + titleLine2.height * 0.5,
+					[UiSkin.TRIM, UiSkin.STAMP_RED, UiSkin.CREAM], 18, 200, 0.7, 4, 420);
+				Juice.punch(titleOrnament, 0.06, 0.3);
+				Juice.punch(demoBadge, 0.25, 0.3);
+				Juice.punch(demoLabel, 0.25, 0.3);
+			}
+		}));
+	}
+
+	function cancelIntroTweens():Void
+	{
+		for (t in introTweens)
+			t.cancel();
+		introTweens = [];
+		FlxTween.cancelTweensOf(titleLine2);
+		FlxTween.cancelTweensOf(titleLine2.scale);
+		titleLine2.alpha = 1;
+		titleLine2.scale.set(1, 1);
+		titleLine2.angle = titleStampBaseAngle;
+		demoBadge.alpha = 1;
+		demoLabel.alpha = 1;
+		for (item in menuItems)
+		{
+			item.slideX = 0;
+			syncItemScalePosition(item);
+		}
 	}
 
 	public function hide():Void
@@ -218,8 +315,23 @@ class MainMenuOverlay extends FlxGroup
 		for (i in 0...menuItems.length)
 		{
 			var item = menuItems[i];
-			if (item.enabled && item.hit.overlapsPoint(p))
+			if (item.hit.overlapsPoint(p))
 			{
+				if (!item.enabled)
+				{
+					// Locked buttons shake "no" instead of silently ignoring the click.
+					Juice.sfx(Juice.SFX_ERROR, 0.35);
+					FlxTween.cancelTweensOf(item, ["slideX"]);
+					item.slideX = 10;
+					FlxTween.tween(item, {slideX: 0}, 0.4, {
+						ease: FlxEase.elasticOut,
+						onUpdate: function(_) syncItemScalePosition(item),
+						onComplete: function(_) syncItemScalePosition(item)
+					});
+					return true;
+				}
+				Juice.sfx(Juice.SFX_STAMP, 0.45, 0.1);
+				Juice.punch(item.bg, 0.1, 0.25);
 				if (item.action != null)
 					item.action();
 				return true;
@@ -286,15 +398,33 @@ class MainMenuOverlay extends FlxGroup
 		if (nextHover != hoveredIndex)
 		{
 			hoveredIndex = nextHover;
+			if (nextHover >= 0)
+				Juice.blip();
 			refreshMenuColors();
 		}
 
 		updateMenuItemHover();
+		updateIdle(elapsed);
+	}
+
+	/** Small idle life: the title plate bobs and the stamp breathes once it has landed. */
+	function updateIdle(elapsed:Float):Void
+	{
+		idleTime += elapsed;
+		var bob = Math.round(Math.sin(idleTime * 1.6) * 2);
+		titleOrnament.y = titlePlateBaseY + bob;
+		titleLine1.y = titleLine1BaseY + bob;
+		titleLine2.y = titleLine2BaseY + bob;
+		demoBadge.y = demoBadgeBaseY + bob;
+		demoLabel.y = demoLabelBaseY + bob;
+		if (titleStampLanded)
+			titleLine2.angle = titleStampBaseAngle + Math.sin(idleTime * 2.3) * 1.2;
 	}
 
 	function addMenuItem(label:String, enabled:Bool, action:Void->Void):Void
 	{
 		var hit = new FlxSprite();
+		var bg = new FlxSprite();
 		var text = new FlxText(0, 0, 100, label);
 		menuItems.push({
 			label: label,
@@ -302,11 +432,15 @@ class MainMenuOverlay extends FlxGroup
 			action: action,
 			hit: hit,
 			text: text,
+			bg: bg,
 			hoverTween: null,
 			layoutX: 0,
 			layoutY: 0,
-			layoutW: 0
+			layoutW: 0,
+			layoutH: 0,
+			slideX: 0
 		});
+		add(bg);
 		add(hit);
 		add(text);
 	}
@@ -399,12 +533,16 @@ class MainMenuOverlay extends FlxGroup
 		titleOrnament.visible = false;
 		titleLine1.visible = false;
 		titleLine2.visible = false;
+		demoBadge.visible = false;
+		demoLabel.visible = false;
+		footerText.visible = false;
 		clouds.visible = false;
 
 		for (item in menuItems)
 		{
 			item.hit.visible = false;
 			item.text.visible = false;
+			item.bg.visible = false;
 		}
 	}
 
@@ -415,12 +553,16 @@ class MainMenuOverlay extends FlxGroup
 		titleOrnament.visible = true;
 		titleLine1.visible = true;
 		titleLine2.visible = true;
+		demoBadge.visible = true;
+		demoLabel.visible = true;
+		footerText.visible = true;
 		clouds.visible = true;
 
 		for (item in menuItems)
 		{
 			item.hit.visible = true;
 			item.text.visible = true;
+			item.bg.visible = true;
 		}
 	}
 
@@ -477,7 +619,9 @@ class MainMenuOverlay extends FlxGroup
 		blackScreen.updateHitbox();
 
 		var sidebarW = Std.int(w * SIDEBAR_RATIO);
-		var sidebarX = w - sidebarW;
+		var cardX = w - sidebarW - CARD_MARGIN;
+		var cardY = CARD_MARGIN;
+		var cardH = Std.int(h - CARD_MARGIN * 2);
 
 		bgImage.setPosition(0, 0);
 		bgImage.setGraphicSize(Std.int(w), Std.int(h));
@@ -486,53 +630,84 @@ class MainMenuOverlay extends FlxGroup
 		clouds.layout(w, h);
 		traffic.layout(w, h);
 
-		sidebar.setPosition(sidebarX, 0);
-		sidebar.makeGraphic(sidebarW, Std.int(h), 0xFF000000, true);
-		sidebar.alpha = SIDEBAR_ALPHA;
-		sidebar.updateHitbox();
+		sidebarDivider.makeGraphic(1, 1, FlxColor.TRANSPARENT, true);
 
-		sidebarDivider.setPosition(sidebarX, 0);
-		sidebarDivider.makeGraphic(2, Std.int(h), GOLD_LINE, true);
-		sidebarDivider.updateHitbox();
+		var pad = 16;
+		var plateW = sidebarW - pad * 2;
+		var plateX = cardX + pad;
+		var plateY = cardY + pad + 6;
+		var titleSize = Std.int(Math.max(16, h / 34));
+		var stampSize = Std.int(Math.max(20, h / 19));
 
-		var titleSize = Std.int(Math.max(19, h / 22 - 1));
-		var itemSize = Std.int(Math.max(18, h / 28));
-		var pad = Std.int(Math.max(8, sidebarW * 0.05));
-		var itemH = itemSize + 22;
-		var itemGap = 8;
-		var itemW = sidebarW - pad * 2;
-		var ornamentH = 2;
-		var ornamentW = Std.int(sidebarW * 0.92);
-		var titleLineGap = Std.int(Math.max(2, titleSize * 0.08));
-		var titleOrnamentGap = Std.int(Math.max(10, titleSize * 0.4));
-		var titleMenuGap = Std.int(Math.max(20, h * 0.035));
-		var contentX = sidebarX + pad;
-		var contentY = Std.int(Math.max(pad, h * 0.07));
-		var titleBlockH = titleSize * 2 + titleLineGap;
+		titleLine1.text = "Am I";
+		titleLine1.setFormat(null, titleSize, UiSkin.PANEL, "center");
+		titleLine1.borderStyle = FlxTextBorderStyle.NONE;
+		titleLine1.fieldWidth = plateW;
+		titleLine1.wordWrap = false;
 
-		layoutTitleLine(titleLine1, "Am I", titleSize, sidebarW, sidebarX, contentY);
-		layoutTitleLine(titleLine2, "approved?", titleSize, sidebarW, sidebarX, contentY + titleSize + titleLineGap);
+		// Setting fieldWidth re-enables word wrap, so switch it off afterwards.
+		titleLine2.text = "APPROVED?";
+		titleLine2.fieldWidth = plateW;
+		titleLine2.wordWrap = false;
+		do
+		{
+			titleLine2.setFormat(null, stampSize, UiSkin.STAMP_RED, "center");
+			titleLine2.setBorderStyle(FlxTextBorderStyle.OUTLINE, 0xFF7A1E18, 1);
+			stampSize--;
+		}
+		while (titleLine2.textField.textWidth > plateW - 14 && stampSize > 12);
 
-		var ornamentY = contentY + titleBlockH + titleOrnamentGap;
-		var ornamentX = sidebarX + (sidebarW - ornamentW) * 0.5;
-		titleOrnament.setPosition(ornamentX, ornamentY);
-		titleOrnament.makeGraphic(ornamentW, ornamentH, GOLD_LINE, true);
+		var plateH = Std.int(titleLine1.height + titleLine2.height + 22);
+		UiSkin.panel(titleOrnament, plateW, plateH, UiSkin.CREAM, UiSkin.TRIM_DARK, 5, 3, 3);
+		titleOrnament.setPosition(plateX, plateY);
 		titleOrnament.updateHitbox();
+		titlePlateBaseY = plateY;
 
-		var menuStartY = ornamentY + ornamentH + titleMenuGap;
+		titleLine1BaseY = plateY + 8;
+		titleLine1.setPosition(plateX, titleLine1BaseY);
+		titleLine2BaseY = titleLine1BaseY + titleLine1.height - 2;
+		titleLine2.setPosition(plateX, titleLine2BaseY);
+		titleLine2.angle = titleStampBaseAngle;
+
+		// Gold tag pinned over the plate's top-right corner.
+		UiSkin.panel(demoBadge, DEMO_BADGE_W, DEMO_BADGE_H, Juice.GOLD, UiSkin.INK, 3, 2, 2);
+		demoBadge.updateHitbox();
+		demoBadge.angle = DEMO_BADGE_ANGLE;
+		demoBadge.x = plateX + plateW - DEMO_BADGE_W + 12;
+		demoBadgeBaseY = plateY - 13;
+		demoBadge.y = demoBadgeBaseY;
+		demoLabel.setFormat(null, 14, UiSkin.INK, "center");
+		demoLabel.fieldWidth = DEMO_BADGE_W;
+		demoLabel.wordWrap = false;
+		demoLabel.angle = DEMO_BADGE_ANGLE;
+		demoLabel.x = demoBadge.x;
+		demoLabelBaseY = demoBadgeBaseY + (DEMO_BADGE_H - demoLabel.height) * 0.5;
+		demoLabel.y = demoLabelBaseY;
+
+		var itemSize = Std.int(Math.max(15, h / 36));
+		var itemH = itemSize + 20;
+		var itemGap = 10;
+		var itemW = plateW;
+		var menuStartY = plateY + plateH + 28;
 		for (i in 0...menuItems.length)
 		{
 			var item = menuItems[i];
 			var y = menuStartY + i * (itemH + itemGap);
-			item.hit.setPosition(contentX, y);
+			item.hit.setPosition(plateX, y);
 			item.hit.makeGraphic(itemW, itemH, 0x00000000, true);
 			item.hit.updateHitbox();
 
-			item.layoutX = contentX;
-			item.layoutY = y + (itemH - itemSize) * 0.5;
+			if (item.enabled)
+				UiSkin.panel(item.bg, itemW - UiSkin.SHADOW_OFFSET, itemH - UiSkin.SHADOW_OFFSET, UiSkin.CREAM, UiSkin.INK, 4, 2);
+			else
+				UiSkin.panel(item.bg, itemW - UiSkin.SHADOW_OFFSET, itemH - UiSkin.SHADOW_OFFSET, UiSkin.BUTTON, UiSkin.PANEL_DEEP, 4, 2);
+
+			item.layoutX = plateX;
+			item.layoutY = y;
 			item.layoutW = itemW;
-			item.text.text = item.label;
-			item.text.setFormat(null, itemSize, item.enabled ? ITEM_COLOR : ITEM_DISABLED, "center");
+			item.layoutH = itemH - UiSkin.SHADOW_OFFSET;
+			item.text.text = item.enabled ? item.label : item.label + "  (soon)";
+			item.text.setFormat(null, item.enabled ? itemSize : Std.int(itemSize * 0.8), item.enabled ? ITEM_COLOR : ITEM_DISABLED, "center");
 			item.text.fieldWidth = itemW;
 			item.text.origin.set(0, 0);
 			cancelItemHoverTween(item);
@@ -540,17 +715,32 @@ class MainMenuOverlay extends FlxGroup
 			syncItemScalePosition(item);
 		}
 
+		footerText.text = "CoolMath Bank  -  Est. 1967\nRepublic of Loria";
+		footerText.setFormat(null, 10, UiSkin.STEEL, "center");
+		footerText.fieldWidth = plateW;
+		footerText.alpha = 0.85;
+		var footerY = menuStartY + menuItems.length * (itemH + itemGap) + 14;
+		footerText.setPosition(plateX, footerY);
+
+		// Floating navy card with a steel pinstripe, sized to its contents.
+		cardH = Std.int(Math.min(cardH, footerY + footerText.height + pad - cardY));
+		UiSkin.panel(sidebar, sidebarW, cardH, UiSkin.PANEL, UiSkin.PANEL_DEEP, 8, 3, 5);
+		drawFrame(sidebar, 7, 7, sidebarW - 14, cardH - 14, UiSkin.TRIM_DARK);
+		sidebar.setPosition(cardX, cardY);
+		sidebar.alpha = 0.96;
+		sidebar.updateHitbox();
+
 		refreshMenuColors();
 	}
 
-	function layoutTitleLine(label:FlxText, text:String, size:Int, width:Int, x:Float, y:Float):Void
+	function drawFrame(spr:FlxSprite, x:Int, y:Int, w:Int, h:Int, color:Int):Void
 	{
-		label.text = text;
-		label.wordWrap = false;
-		label.setFormat(null, size, TITLE_COLOR, "center");
-		label.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(24, 16, 10), Math.max(1, size / 16));
-		label.fieldWidth = width;
-		label.setPosition(x, y);
+		var bmd = spr.pixels;
+		bmd.fillRect(new Rectangle(x + 3, y, w - 6, 1), color);
+		bmd.fillRect(new Rectangle(x + 3, y + h - 1, w - 6, 1), color);
+		bmd.fillRect(new Rectangle(x, y + 3, 1, h - 6), color);
+		bmd.fillRect(new Rectangle(x + w - 1, y + 3, 1, h - 6), color);
+		spr.dirty = true;
 	}
 
 	function refreshMenuColors():Void
@@ -558,9 +748,11 @@ class MainMenuOverlay extends FlxGroup
 		for (i in 0...menuItems.length)
 		{
 			var item = menuItems[i];
+			var hovered = item.enabled && i == hoveredIndex;
+			item.bg.color = hovered ? HOVER_TINT : FlxColor.WHITE;
 			if (!item.enabled)
 				item.text.color = ITEM_DISABLED;
-			else if (i == hoveredIndex)
+			else if (hovered)
 				item.text.color = ITEM_HOVER;
 			else
 				item.text.color = ITEM_COLOR;
@@ -604,7 +796,10 @@ class MainMenuOverlay extends FlxGroup
 	function syncItemScalePosition(item:MainMenuItem):Void
 	{
 		var s = item.text.scale.x;
-		item.text.setPosition(item.layoutX + item.layoutW * (1 - s) * 0.5, item.layoutY);
+		var x = item.layoutX + item.slideX;
+		item.bg.scale.set(s, s);
+		item.bg.setPosition(x, item.layoutY);
+		item.text.setPosition(x + item.layoutW * (1 - s) * 0.5, item.layoutY + (item.layoutH - item.text.height * s) * 0.5);
 	}
 
 	function cancelItemHoverTween(item:MainMenuItem):Void

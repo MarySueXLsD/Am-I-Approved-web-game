@@ -9,6 +9,7 @@ class ShiftStats
 	public static var correctDeclines = 0;
 	public static var fraudCaught = 0;
 	public static var recordsFixed = 0;
+	public static var questionsAsked = 0;
 	public static var rejectedSubmissions = 0;
 	public static var shiftSeconds = 0.0;
 	public static var running = false;
@@ -21,6 +22,7 @@ class ShiftStats
 		correctDeclines = 0;
 		fraudCaught = 0;
 		recordsFixed = 0;
+		questionsAsked = 0;
 		rejectedSubmissions = 0;
 		shiftSeconds = 0;
 		running = false;

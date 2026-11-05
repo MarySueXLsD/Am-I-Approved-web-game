@@ -1544,7 +1544,7 @@ class ChefTutorial
 				guideShownForPhase = guidePhase;
 				deskCoach.showCoach(
 					'Behold: the Guide Book. Rules, tips, and the official list of Questions You Are Allowed To Ask.\n\n'
-						+ 'Click "Questions to ask" in the contents to jump to pages 31–32.',
+						+ 'Click "Questions to ask" in the contents to jump to pages 5–6.',
 					ctx.tocQuestionsHighlight,
 					false,
 					null,

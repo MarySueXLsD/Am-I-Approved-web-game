@@ -21,7 +21,7 @@ class BeginningDayOverlay extends FlxGroup
 	static inline var OUTRO_FADE_IN = 0.8;
 	static inline var OUTRO_TITLE_HOLD = 1.5;
 	static inline var OUTRO_TITLE_FADE_OUT = 1.0;
-	static inline var OUTRO_FADE_OUT = 0.9;
+	static inline var OUTRO_FADE_OUT = 1.3;
 	static inline var OUTRO_TITLE_Y_RATIO = 0.38;
 	static inline var NEWSPAPER_SCREEN_RATIO = 0.38;
 	static inline var NEWSPAPER_SIZE_MULTIPLIER = 2.5;
@@ -310,8 +310,8 @@ class BeginningDayOverlay extends FlxGroup
 		var outline = Math.max(2, Std.int(fontSize / 13));
 
 		dayTitleLabel.text = "First Day";
-		dayTitleLabel.setFormat(null, fontSize, FlxColor.fromRGB(244, 228, 196), "center");
-		dayTitleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(52, 34, 22), outline);
+		dayTitleLabel.setFormat(null, fontSize, UiSkin.TEXT, "center");
+		dayTitleLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, outline);
 		dayTitleLabel.fieldWidth = FlxG.width;
 		dayTitleLabel.scale.set(1, 1);
 		dayTitleLabel.setPosition(0, (FlxG.height - fontSize) * OUTRO_TITLE_Y_RATIO);
@@ -333,13 +333,14 @@ class BeginningDayOverlay extends FlxGroup
 		if (cb != null)
 			cb();
 
-		activeTween = FlxTween.tween(blackScreen, {alpha: 0}, OUTRO_FADE_OUT, {
-			ease: FlxEase.sineInOut,
+		// One clean fade up from the "First Day" card to the office.
+		activeTween = FlxTween.num(1, 0, OUTRO_FADE_OUT, {
+			ease: FlxEase.quadOut,
 			onComplete: function(_)
 			{
 				completeRevealGame();
 			}
-		});
+		}, function(v) blackScreen.alpha = v);
 	}
 
 	function completeRevealGame():Void
@@ -455,7 +456,7 @@ class BeginningDayOverlay extends FlxGroup
 		var labelY = Std.int(Math.max(24, h * 0.06));
 
 		startLabel.text = "Start the day";
-		startLabel.setFormat(null, fontSize, 0xFF5C4033, "center");
+		startLabel.setFormat(null, fontSize, UiSkin.PANEL, "center");
 		startLabel.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.BLACK, Math.max(2, fontSize / 16));
 		startLabel.fieldWidth = labelW;
 		startLabel.setPosition((w - labelW) * 0.5, labelY);

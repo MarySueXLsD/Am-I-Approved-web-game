@@ -86,6 +86,7 @@ class PlayState extends FlxState
 	var clientFinalX:Float;
 	var clientFinalY:Float;
 	var clientAnimPhase:Int = 0;
+	var officeLife:OfficeLife;
 	var clientAnimTimer:Float = 0;
 	var clientBobOffset:Float = 0;
 	var clientEntranceDelayRemaining = 0.0;
@@ -443,13 +444,19 @@ class PlayState extends FlxState
 		clientDialog.onPrepareTutorialExit = function()
 		{
 			if (chefTutorial != null)
+			{
+				chefHandsOverClosedGuideBook();
 				beginChefTutorialIdReturn();
+			}
 		};
 
 		clientDialog.onSkipTutorial = function()
 		{
 			if (chefTutorial != null)
+			{
 				chefTutorial.shouldAdvanceOnVisitComplete = true;
+				chefHandsOverClosedGuideBook();
+			}
 		};
 
 		clientDialog.onTutorialIntroSteps = function()
@@ -608,6 +615,8 @@ class PlayState extends FlxState
 					else if (BookScanActions.isBookQuestionId(actionId))
 						chefTutorial.onLoanQuestionAsked(actionId);
 				}
+				else if (BookScanActions.isBookQuestionId(actionId))
+					ShiftStats.questionsAsked++;
 
 				clientDialog.startBookScanAction(actionId);
 				ChefTutorial.pendingBookScanFarewell = false;
@@ -687,6 +696,15 @@ class PlayState extends FlxState
 		{
 			super.update(elapsed);
 			return;
+		}
+
+		if (FlxG.mouse.justPressed && !mainMenuOverlay.isShowing && !shiftPauseOverlay.isActive() && !EndOfDemoPopup.blocksWorldInput()
+			&& !monitor.isActive() && !ScanModeOverlay.isScanModeActive())
+		{
+			if (officeLife.plantHitsPoint(p))
+				officeLife.pokePlant();
+			else if (!isPointOnCalculator(p) && frontmostDocumentAtPoint(p) == null)
+				officeLife.handleClick(p);
 		}
 
 		if (mainMenuOverlay.isShowing)
@@ -822,11 +840,14 @@ class PlayState extends FlxState
 
 	function addDeskPropsAndDocuments():Void
 	{
+		officeLife = new OfficeLife(zones);
+		add(officeLife);
 		// Large/open employer-table docs draw under desk props; closed docs draw on top.
 		add(documentsBelow);
 		// Left-column panels sit above open employer docs so ID text/card cannot bleed over them.
 		add(clientPanel);
 		add(clientWall);
+		add(officeLife.wallLayer);
 		add(clientImg);
 		add(clientDialog);
 		add(clientTablePanel);
@@ -845,6 +866,7 @@ class PlayState extends FlxState
 		for (overlay in calculatorBtnOverlays)
 			add(overlay);
 		add(documentsAbove);
+		add(officeLife.plant);
 	}
 
 	function syncDocumentLayers():Void
@@ -1110,6 +1132,9 @@ class PlayState extends FlxState
 
 	function cursorOverDeskPropsAt(p:FlxPoint):Bool
 	{
+		if (officeLife != null && officeLife.plantHitsPoint(p))
+			return true;
+
 		if (printerStation != null
 			&& cursorInAxisRect(p.x, p.y, printerStation.getBodyX(), printerStation.getBodyY(), printerStation.getBodyW(), printerStation.getBodyH()))
 			return true;
@@ -1670,6 +1695,23 @@ class PlayState extends FlxState
 		layoutClientTableDocuments();
 	}
 
+	/** Chef slides the book across the counter when training is skipped or declined. */
+	function chefHandsOverClosedGuideBook():Void
+	{
+		if (bookDocument == null || bookDocument.visible)
+			return;
+
+		if (documentsAbove.members.indexOf(bookDocument) < 0)
+			documentsAbove.add(bookDocument);
+		bookDocument.prepareClientHandoff();
+		var target = getClientTableLayoutTarget(bookDocument);
+		var startX = clientFinalX + (clientImg.width - bookDocument.width) * 0.5;
+		bookDocument.playDropFromClient(startX, clientFinalY + clientImg.height * 0.35, target.x, target.y, 0);
+		moveDocumentToLayer(bookDocument);
+		Juice.sfx(Juice.SFX_THUMP, 0.8);
+		hopClient();
+	}
+
 	function stashDocumentOffDesk(doc:DeskDocument):Void
 	{
 		doc.hideFromDesk();
@@ -2067,7 +2109,9 @@ class PlayState extends FlxState
 
 	function startChefEntranceDelay():Void
 	{
-		beginClientEntrance();
+		// A beat of empty, lit office, then the door: Chef walks in on the footsteps.
+		Juice.sfx(Juice.SFX_DOOR, 0.35);
+		clientEntranceDelayRemaining = 1.2;
 	}
 
 	function showMainMenuFromPause():Void
@@ -2784,6 +2828,7 @@ class PlayState extends FlxState
 
 	function beginClientEntrance():Void
 	{
+		Juice.sfx(Juice.SFX_FOOTSTEPS, 0.6);
 		clientAnimPhase = 1;
 		clientAnimTimer = 0;
 		clientBobOffset = 0;
@@ -2822,6 +2867,7 @@ class PlayState extends FlxState
 				clientImg.y = clientFinalY;
 				clientAnimPhase = 2;
 				clientAnimTimer = 0;
+				Juice.sfx(Juice.SFX_BELL, 0.45);
 			}
 		}
 		else if (clientAnimPhase == 2)
@@ -2850,6 +2896,7 @@ class PlayState extends FlxState
 				clientImg.color = FlxColor.BLACK;
 				clientAnimPhase = 4;
 				clientAnimTimer = 0;
+				Juice.sfx(Juice.SFX_FOOTSTEPS, 0.5);
 			}
 		}
 		else if (clientAnimPhase == 4)
@@ -2942,9 +2989,8 @@ class PlayState extends FlxState
 		clientImg.x = -clientImg.width;
 		clientImg.y = clientFinalY;
 		clientImg.color = FlxColor.BLACK;
-		clientAnimPhase = 1;
-		clientAnimTimer = 0;
-		clientBobOffset = 0;
+		Juice.sfx(Juice.SFX_DOOR, 0.3);
+		beginClientEntrance();
 	}
 
 	function showEndOfDemoPopup():Void
@@ -3227,7 +3273,8 @@ class PlayState extends FlxState
 
 	function placeGuideBookForLoanTutorial():Void
 	{
-		bookDocument.slideOpenToEmployerTableCenter(function()
+		hopClient();
+		bookDocument.handOverOpenToEmployerTable(clientFinalX + clientImg.width * 0.3, clientFinalY + clientImg.height * 0.3, function()
 		{
 			if (chefTutorial != null)
 				chefTutorial.notifyBookSlideComplete();
@@ -3693,6 +3740,8 @@ class PlayState extends FlxState
 	/** Debug builds only: preview each outcome effect without playing a full case. */
 	function updateDebugJuiceKeys():Void
 	{
+		if (FlxG.keys.justPressed.F4)
+			placeGuideBookForLoanTutorial();
 		var cx = zones.leftW * 0.5;
 		var cy = zones.clientH * 0.5;
 		if (FlxG.keys.justPressed.F6)
@@ -3718,13 +3767,13 @@ class PlayState extends FlxState
 		}
 		else if (FlxG.keys.justPressed.F10)
 		{
-			ShiftStats.clientsServed = 7;
-			ShiftStats.loansApproved = 4;
-			ShiftStats.lorGranted = 140000;
+			ShiftStats.clientsServed = 3;
+			ShiftStats.loansApproved = 1;
+			ShiftStats.lorGranted = 35000;
 			ShiftStats.correctDeclines = 1;
 			ShiftStats.fraudCaught = 1;
-			ShiftStats.recordsFixed = 1;
-			ShiftStats.rejectedSubmissions = 2;
+			ShiftStats.questionsAsked = 9;
+			ShiftStats.rejectedSubmissions = 1;
 			showEndOfDemoPopup();
 		}
 		else if (FlxG.keys.justPressed.F11)
