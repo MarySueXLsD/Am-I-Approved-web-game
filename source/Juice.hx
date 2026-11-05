@@ -39,6 +39,12 @@ class Juice extends FlxGroup
 	public static inline var SFX_KEY = "static/Audio/SFX/key.wav";
 	public static inline var SFX_COINS = "static/Audio/SFX/coins.wav";
 	public static inline var SFX_WHOOSH = "static/Audio/SFX/whoosh.wav";
+	public static inline var SFX_FOOTSTEPS = "static/Audio/SFX/footsteps.wav";
+	public static inline var SFX_BELL = "static/Audio/SFX/bell.wav";
+	public static inline var SFX_LIGHTS = "static/Audio/SFX/lights.wav";
+	public static inline var SFX_PAGE = "static/Audio/SFX/page.wav";
+	public static inline var SFX_THUMP = "static/Audio/SFX/thump.wav";
+	public static inline var SFX_DOOR = "static/Audio/Ambient/Heavy_Door_Opening_4sec.wav";
 
 	public static inline var GREEN = 0xFF5FD068;
 	public static inline var RED = 0xFFE24A4A;
@@ -164,14 +170,14 @@ class Juice extends FlxGroup
 			return;
 
 		if (cx < 0)
-			cx = FlxG.width * 0.5;
+			cx = FlxG.width * 0.62;
 		if (cy < 0)
-			cy = FlxG.height * 0.42;
+			cy = FlxG.height * 0.3;
 
 		var size = 54;
 		var label = new FlxText(0, 0, 0, text, size);
 		label.setFormat(null, size, color, "center");
-		label.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(20, 12, 8), 3);
+		label.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, 3);
 		label.updateHitbox();
 
 		var padX = 26;
@@ -197,7 +203,7 @@ class Juice extends FlxGroup
 		{
 			subText = new FlxText(0, 0, boxW, sub, 16);
 			subText.setFormat(null, 16, color, "center");
-			subText.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(20, 12, 8), 2);
+			subText.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, 2);
 		}
 
 		var angle = FlxG.random.float(-14, -6);
@@ -290,7 +296,7 @@ class Juice extends FlxGroup
 
 		var t = new FlxText(0, 0, 0, text, size);
 		t.setFormat(null, size, color, "center");
-		t.setBorderStyle(FlxTextBorderStyle.OUTLINE, FlxColor.fromRGB(16, 10, 6), 2);
+		t.setBorderStyle(FlxTextBorderStyle.OUTLINE, UiSkin.OUTLINE, 2);
 		t.cameras = instance.cameras;
 		t.updateHitbox();
 		t.setPosition(x - t.width * 0.5, y - t.height * 0.5);
@@ -307,6 +313,45 @@ class Juice extends FlxGroup
 				t.destroy();
 			}
 		});
+	}
+
+	/** Throws an image in an arc from one spot to another on the top layer, growing or shrinking on the way. */
+	public static function flyProp(path:String, fromX:Float, fromY:Float, fromW:Float, toX:Float, toY:Float, toW:Float,
+			?duration:Float = 0.6, ?arc:Float = 70, ?onLand:Void->Void):Void
+	{
+		if (instance == null)
+		{
+			if (onLand != null)
+				onLand();
+			return;
+		}
+
+		var prop = new FlxSprite();
+		prop.loadGraphic(path);
+		prop.cameras = instance.cameras;
+		instance.add(prop);
+
+		function place(t:Float):Void
+		{
+			var w = fromW + (toW - fromW) * t;
+			var s = w / prop.frameWidth;
+			prop.scale.set(s, s);
+			prop.updateHitbox();
+			prop.setPosition(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * arc);
+			prop.angle = -24 * (1 - t);
+		}
+		place(0);
+
+		FlxTween.num(0, 1, duration, {
+			ease: FlxEase.quadIn,
+			onComplete: function(_)
+			{
+				instance.remove(prop, true);
+				prop.destroy();
+				if (onLand != null)
+					onLand();
+			}
+		}, place);
 	}
 
 	/** Quick squash-and-stretch on any sprite, restoring its original scale. */

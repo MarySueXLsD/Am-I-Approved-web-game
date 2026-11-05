@@ -20,13 +20,13 @@ class TrainingProgressHud extends FlxGroup
 	static inline var PANEL_H = 54;
 	static inline var PIP = 12;
 	static inline var PIP_GAP = 6;
-	static inline var FILL = 0xEE141C24;
-	static inline var BORDER = 0xFFD4AF6A;
-	static inline var TITLE = 0xFFE8C878;
+	static inline var FILL = 0xF23A322A;
+	static inline var BORDER = UiSkin.TRIM;
+	static inline var TITLE = UiSkin.TITLE;
 	static inline var BODY = 0xFFDCE6E0;
-	static inline var PIP_EMPTY = 0xFF3A4450;
+	static inline var PIP_EMPTY = UiSkin.BUTTON;
 	static inline var PIP_DONE = 0xFF5FD068;
-	static inline var PIP_CURRENT = 0xFFE8C878;
+	static inline var PIP_CURRENT = UiSkin.TITLE;
 
 	static var PRAISE = [
 		"Nailed it!",
@@ -55,16 +55,7 @@ class TrainingProgressHud extends FlxGroup
 		baseY = topY;
 
 		panel = new FlxSprite(baseX, baseY);
-		panel.makeGraphic(PANEL_W, PANEL_H, FILL, true);
-		var b = 2;
-		for (r in [
-			new Rectangle(0, 0, PANEL_W, b),
-			new Rectangle(0, PANEL_H - b, PANEL_W, b),
-			new Rectangle(0, 0, b, PANEL_H),
-			new Rectangle(PANEL_W - b, 0, b, PANEL_H)
-		])
-			panel.pixels.fillRect(r, BORDER);
-		panel.dirty = true;
+		UiSkin.panel(panel, PANEL_W, PANEL_H, FILL, BORDER, 5, 2);
 		add(panel);
 
 		titleText = new FlxText(baseX + 10, baseY + 5, PANEL_W - 20, "TRAINING", 10);
