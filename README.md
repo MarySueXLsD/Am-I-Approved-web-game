@@ -1,5 +1,9 @@
 # Am I Approved?
 
+<p align="center">
+  <img src="assets/itch/banner.gif" width="960" alt="Animated banner: cars drive past Cool Math Bank while an APPROVED? stamp lands on the billboard">
+</p>
+
 A bureaucratic loan desk sim set in the Republic of Loria, circa 1967. You were hired as employee **#447-B** to approve loans, reject loans, and look busy between visitors. Management has full confidence in you. Management also left early.
 
 **[Play the demo in your browser →](https://marysue.itch.io/am-i-approved)** · **[Watch the trailer on YouTube →](https://youtu.be/uLAc5yxb73E)**
