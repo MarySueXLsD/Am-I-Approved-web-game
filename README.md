@@ -2,15 +2,19 @@
 
 A bureaucratic loan desk sim set in the Republic of Loria, circa 1967. You were hired as employee **#447-B** to approve loans, reject loans, and look busy between visitors. Management has full confidence in you. Management also left early.
 
-**[Play the demo in your browser →](https://marysue.itch.io/am-i-approved)**
+**[Play the demo in your browser →](https://marysue.itch.io/am-i-approved)** · **[Watch the trailer on YouTube →](https://youtu.be/uLAc5yxb73E)**
 
 <p align="center">
-  <img src="assets/gameplay.gif" width="600" alt="Gameplay: a client hands over an ID, the photo check exposes a fraud, and the shift ends with a performance review">
+  <a href="https://youtu.be/uLAc5yxb73E"><img src="assets/trailer_thumbnail.jpg" width="720" alt="Watch the trailer of Am I Approved? on YouTube"></a>
 </p>
 
 ## About
 
 Clients arrive at your desk with stories, ID cards, and paperwork that does not always add up. Your job is to listen, inspect, compare, and decide who gets the money.
+
+<p align="center">
+  <img src="assets/gameplay.gif" width="600" alt="Gameplay: a client hands over an ID, the photo check exposes a fraud, and the shift ends with a performance review">
+</p>
 
 **This is a demo:** one short shift with Chef's training and three cases, ending in your performance review. Approve the honest loan, decline the one the numbers won't support, and catch the client holding someone else's ID.
 
@@ -100,3 +104,5 @@ lime test html5
 ```
 
 Output: `dist/BreakTheBank-itchio.zip`
+
+**itch.io page art:** the banner, cover and page backgrounds are in `assets/itch/`.

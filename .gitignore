@@ -6,3 +6,6 @@ export/
 *.so
 *.exe
 .DS_Store
+__pycache__/
+# Trailer renders and raw captures (the final cut is on YouTube)
+trailer/
