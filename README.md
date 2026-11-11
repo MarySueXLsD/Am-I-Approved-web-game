@@ -8,10 +8,6 @@ A bureaucratic loan desk sim set in the Republic of Loria, circa 1967. You were 
 
 **[Play the demo in your browser →](https://marysue.itch.io/am-i-approved)** · **[Watch the trailer on YouTube →](https://youtu.be/uLAc5yxb73E)**
 
-<p align="center">
-  <a href="https://youtu.be/uLAc5yxb73E"><img src="assets/trailer_thumbnail.jpg" width="720" alt="Watch the trailer of Am I Approved? on YouTube"></a>
-</p>
-
 ## About
 
 Clients arrive at your desk with stories, ID cards, and paperwork that does not always add up. Your job is to listen, inspect, compare, and decide who gets the money.
